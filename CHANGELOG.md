@@ -8,6 +8,8 @@ CHANGELOG
 
 ### Added
 
+* Typical Markdown info files in root of Repo
+
 ### Changed
 
 * PERFORMANCE TUNE: Updated ownedZones update() logic to skip all calculations 
