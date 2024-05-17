@@ -45,7 +45,8 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - title attribute 
 	  - code clean-up
 2.3.1 - restored getNearestOwnedZoneToPoint 
-2.4.0 - Updated update() logic to be more streamlined
+2.3.2 - Updated update() logic to be more streamlined
+2.4.0 - Added toggleVis logic to show/hide zones dynamically
 --]]--
 cfxOwnedZones.requiredLibs = {
 	"dcsCommon", 
@@ -112,24 +113,27 @@ function cfxOwnedZones.drawZoneInMap(aZone)
 	if aZone.titleID then 
 		trigger.action.removeMark(aZone.titleID)
 	end 
-	
-	local lineColor = aZone.redLine -- {1.0, 0, 0, 1.0} -- red  
-	local fillColor = aZone.redFill -- {1.0, 0, 0, 0.2} -- red 
+
 	local owner = aZone.owner 
-	if owner == 2 then 
+	-- Default Neutral Colors
+	local lineColor = aZone.neutralLine -- {0.8, 0.8, 0.8, 1.0}
+	local fillColor = aZone.neutralFill -- {0.8, 0.8, 0.8, 0.2}
+
+	if owner == 1 then 
+		lineColor = aZone.redLine -- {1.0, 0, 0, 1.0} -- red  
+		fillColor = aZone.redFill -- {1.0, 0, 0, 0.2} -- red 
+	elseif owner == 2 then 
 		lineColor = aZone.blueLine -- {0.0, 0, 1.0, 1.0}
 		fillColor = aZone.blueFill -- {0.0, 0, 1.0, 0.2}
-	elseif owner == 0 then 
-		lineColor = aZone.neutralLine -- {0.8, 0.8, 0.8, 1.0}
-		fillColor = aZone.neutralFill -- {0.8, 0.8, 0.8, 0.2}
 	end
 	
 	if aZone.title then 
 		aZone.titleID = aZone:drawText(aZone.title, 18, lineColor, {0, 0, 0, 0})
 	end 
 	
-	if aZone.hidden then return end 	
-	aZone.markID = aZone:drawZone(lineColor, fillColor) -- markID 
+	if not aZone.hidden then 
+		aZone.markID = aZone:drawZone(lineColor, fillColor) -- markID 
+	end
 end
 
 function cfxOwnedZones.getOwnedZoneByName(zName)
@@ -141,7 +145,12 @@ end
 
 function cfxOwnedZones.addOwnedZone(aZone)
 	local owner = aZone.owner 
-	
+
+	if aZone:hasProperty("toggleVis?") then
+		aZone.toggleVisFlag = aZone:getStringFromZoneProperty("toggleVis?", "none")
+		aZone.lastToggleVisValue = trigger.misc.getUserFlag(aZone.toggleVisFlag)
+	end
+
 	if aZone:hasProperty("conquered!") then 
 		aZone.conqueredFlag = aZone:getStringFromZoneProperty("conquered!", "*<cfxnone>")
 	end
@@ -316,6 +325,7 @@ function cfxOwnedZones.update()
 	-- in group, and if inside, count the entire group as inside 
 	-- new. unit counting update 
 	cfxOwnedZones.updateSchedule = timer.scheduleFunction(cfxOwnedZones.update, {}, timer.getTime() + 1/cfxOwnedZones.ups)
+
 	-- iterate all groups and their units to count how many 
 	-- units are in each zone, also count how many zones each side has
 	local totalZoneNum = 0
@@ -351,6 +361,21 @@ function cfxOwnedZones.update()
 	
 	-- WARNING: we only proc ownedZones, NOT airfield nor FARP or other
 	for idz, theZone in pairs(cfxOwnedZones.zones) do 
+		-- See if the zone F10 Map visibility needs to change
+		if theZone.toggleVisFlag then
+			local currTriggerVal = trigger.misc.getUserFlag(theZone.toggleVisFlag)
+			if currTriggerVal ~= theZone.lastToggleVisValue then
+				theZone.lastToggleVisValue = currTriggerVal
+				if theZone.hidden then
+					theZone.hidden = false
+				else
+					theZone.hidden = true
+				end
+				cfxOwnedZones.drawZoneInMap(theZone)
+			end
+		end
+
+		-- Figure out the details of the zone changes
 		local lastOwner = theZone.owner
 
 		if not lastOwner then
