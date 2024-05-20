@@ -1,7 +1,7 @@
 --ownedZones.lua
 
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.4.0"
+cfxOwnedZones.version = "2.4.1"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = true 
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -47,6 +47,7 @@ cfxOwnedZones.name = "cfxOwnedZones"
 2.3.1 - restored getNearestOwnedZoneToPoint 
 2.3.2 - Updated update() logic to be more streamlined
 2.4.0 - Added toggleVis logic to show/hide zones dynamically
+2.4.1 - Fixed hidden zone still showing title
 --]]--
 cfxOwnedZones.requiredLibs = {
 	"dcsCommon", 
@@ -127,11 +128,10 @@ function cfxOwnedZones.drawZoneInMap(aZone)
 		fillColor = aZone.blueFill -- {0.0, 0, 1.0, 0.2}
 	end
 	
-	if aZone.title then 
-		aZone.titleID = aZone:drawText(aZone.title, 18, lineColor, {0, 0, 0, 0})
-	end 
-	
 	if not aZone.hidden then 
+		if aZone.title then 
+			aZone.titleID = aZone:drawText(aZone.title, 18, lineColor, {0, 0, 0, 0})
+		end 
 		aZone.markID = aZone:drawZone(lineColor, fillColor) -- markID 
 	end
 end
