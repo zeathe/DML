@@ -1,9 +1,9 @@
 --ownedZones.lua
 
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.4.1"
+cfxOwnedZones.version = "2.5.1"
 cfxOwnedZones.verbose = false 
-cfxOwnedZones.announcer = true 
+cfxOwnedZones.announcer = false
 cfxOwnedZones.name = "cfxOwnedZones" 
 --[[-- VERSION HISTORY
 
@@ -48,6 +48,9 @@ cfxOwnedZones.name = "cfxOwnedZones"
 2.3.2 - Updated update() logic to be more streamlined
 2.4.0 - Added toggleVis logic to show/hide zones dynamically
 2.4.1 - Fixed hidden zone still showing title
+2.5.0 - Added staticsKeep logic to include Static Objects in numKeep
+      - Added enableVis and disableVis for explicit visibility control
+2.5.1 - Adjusted outText with Verbose and Announce gating
 --]]--
 cfxOwnedZones.requiredLibs = {
 	"dcsCommon", 
@@ -149,6 +152,16 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	if aZone:hasProperty("toggleVis?") then
 		aZone.toggleVisFlag = aZone:getStringFromZoneProperty("toggleVis?", "none")
 		aZone.lastToggleVisValue = trigger.misc.getUserFlag(aZone.toggleVisFlag)
+	end
+
+	if aZone:hasProperty("disableVis?") then
+		aZone.disableVisFlag = aZone:getStringFromZoneProperty("disableVis?", "none")
+		aZone.lastToggleVisValue = trigger.misc.getUserFlag(aZone.disableVisFlag)
+	end
+
+	if aZone:hasProperty("enableVis?") then
+		aZone.enableVisFlag = aZone:getStringFromZoneProperty("enableVis?", "none")
+		aZone.lastToggleVisValue = trigger.misc.getUserFlag(aZone.enableVisFlag)
 	end
 
 	if aZone:hasProperty("conquered!") then 
@@ -363,9 +376,9 @@ function cfxOwnedZones.update()
 	for idz, theZone in pairs(cfxOwnedZones.zones) do 
 		-- See if the zone F10 Map visibility needs to change
 		if theZone.toggleVisFlag then
-			local currTriggerVal = trigger.misc.getUserFlag(theZone.toggleVisFlag)
-			if currTriggerVal ~= theZone.lastToggleVisValue then
-				theZone.lastToggleVisValue = currTriggerVal
+			local currToggleVisTriggerVal = trigger.misc.getUserFlag(theZone.toggleVisFlag)
+			if currToggleVisTriggerVal ~= theZone.lastToggleVisValue then
+				theZone.lastToggleVisValue = currToggleVisTriggerVal
 				if theZone.hidden then
 					theZone.hidden = false
 				else
@@ -374,6 +387,25 @@ function cfxOwnedZones.update()
 				cfxOwnedZones.drawZoneInMap(theZone)
 			end
 		end
+
+		if theZone.enableVisFlag then
+			local currEnableVisTriggerVal = trigger.misc.getUserFlag(theZone.enableVisFlag)
+			if currEnableVisTriggerVal ~= theZone.lastEnableVisValue then
+				theZone.lastEnableVisValue = currEnableVisTriggerVal
+				theZone.hidden = false
+				cfxOwnedZones.drawZoneInMap(theZone)
+			end
+		end
+
+		if theZone.disableVisFlag then
+			local currDisableVisTriggerVal = trigger.misc.getUserFlag(theZone.disableVisFlag)
+			if currDisableVisTriggerVal ~= theZone.lastDisableVisValue then
+				theZone.lastDisableVisValue = currDisableVisTriggerVal
+				theZone.hidden = true 
+				cfxOwnedZones.drawZoneInMap(theZone)
+			end
+		end
+
 
 		-- Figure out the details of the zone changes
 		local lastOwner = theZone.owner
@@ -397,7 +429,7 @@ function cfxOwnedZones.update()
 		else
 			theZone.numRed = 0
 			theZone.numBlue = 0 
-			if theZone.verbose then 
+			if theZone.verbose or cfxOwnedZones.verbose then  
 				trigger.action.outText("Zone <" .. theZone.name .. "> lastOwner is <" .. lastOwner .. ">", 30)
 			end 
 
@@ -499,7 +531,7 @@ function cfxOwnedZones.update()
 				end
 			end
 			
-			if theZone.verbose then 
+			if theZone.verbose or cfxOwnedZones.verbose then  
 				trigger.action.outText("+++owdZ: zone <" .. theZone.name .. ">: red inside: <" .. theZone.numRed .. ">, blue inside: <>" .. theZone.numBlue, 30)
 			end
 		
@@ -566,7 +598,9 @@ function cfxOwnedZones.update()
 		if newOwner == lastOwner then 
 			-- nothing happened, do nothing 
 		else 
-			trigger.action.outText(theZone.name .. " change hands from  " .. lastOwner .. " to " .. newOwner, 30)
+			if theZone.verbose or cfxOwnedZones.verbose then  
+				trigger.action.outText(theZone.name .. " change hands from  " .. lastOwner .. " to " .. newOwner, 30)
+			end
 			--if newOwner == 0 then -- zone turned neutral 
 			--	cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
 			--else
@@ -881,6 +915,7 @@ function cfxOwnedZones.readConfigZone(theZone)
 	cfxOwnedZones.navalCap = theZone:getBoolFromZoneProperty("navalCap", false)
 	cfxOwnedZones.heloCap = theZone:getBoolFromZoneProperty("heloCap")
 	cfxOwnedZones.fixWingCap = theZone:getBoolFromZoneProperty("fixWingCap")
+	cfxOwnedZones.staticsKeep = theZone:getBoolFromZoneProperty("staticsKeep", false) -- Static Objects count in the numKeep count
 	
 	-- colors for line and fill 
 	cfxOwnedZones.redLine = theZone:getRGBAVectorFromZoneProperty("redLine", {1.0, 0, 0, 1.0})
