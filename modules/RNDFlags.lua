@@ -1,5 +1,7 @@
+-- rndFlags.lua
+
 rndFlags = {}
-rndFlags.version = "2.0.1"
+rndFlags.version = "2.0.2"
 rndFlags.verbose = false 
 rndFlags.requiredLibs = {
 	"dcsCommon", -- always
@@ -15,6 +17,7 @@ rndFlags.requiredLibs = {
 
 	2.0.0 - dmlZones, OOP
 	2.0.1 - a little less verbosity 
+	2.0.2 - fixed done! not firing when rnd completed in the middle of a firing cycle
 	
 --]]
 
@@ -165,13 +168,26 @@ function rndFlags.fire(theZone)
 	for i=1, pollSize do 
 		-- check there are still flags left 
 		if #availableFlags < 1 then 
+			-- We ran out of flags somewhere through the polling cycle
 			if rndFlags.verbose or theZone.verbose then 
 				trigger.action.outText("+++RND: no flags left in <" .. theZone.name .. "> in index " .. i, 30)
 			end 
+
+			-- kick done!
+			if rndFlags.verbose or theZone.verbose then 
+				trigger.action.outText("+++RND: RND " .. theZone.name .. " ran out of flags. Will fire 'done' instead ", 30)
+			end
+			if theZone.doneFlag then
+				cfxZones.pollFlag(theZone.doneFlag, theZone.rndMethod, theZone)
+			end
+
+			-- Reload the rnd flags if shuffle is enabled
 			theZone.myFlags = {} 
 			if theZone.reshuffle then 
 				rndFlags.reshuffle(theZone)
 			end
+
+			-- Break out of the polling loop
 			return 
 		end
 		
@@ -327,13 +343,6 @@ function rndFlags.start()
 		rndFlags.addRNDZone(aZone)
 	end
 
-	-- obsolete here
-	attrZones = cfxZones.getZonesWithAttributeNamed("RND")
-	for k, aZone in pairs(attrZones) do 
-		rndFlags.createRNDWithZone(aZone) 
-		rndFlags.addRNDZone(aZone)
-	end
-	
 	-- persistence
 	if persistence then 
 		-- sign up for persistence 

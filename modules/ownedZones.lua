@@ -1,7 +1,9 @@
+--ownedZones.lua
+
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.3.1"
+cfxOwnedZones.version = "2.5.1"
 cfxOwnedZones.verbose = false 
-cfxOwnedZones.announcer = true 
+cfxOwnedZones.announcer = false
 cfxOwnedZones.name = "cfxOwnedZones" 
 --[[-- VERSION HISTORY
 
@@ -43,6 +45,12 @@ cfxOwnedZones.name = "cfxOwnedZones"
 	  - title attribute 
 	  - code clean-up
 2.3.1 - restored getNearestOwnedZoneToPoint 
+2.3.2 - Updated update() logic to be more streamlined
+2.4.0 - Added toggleVis logic to show/hide zones dynamically
+2.4.1 - Fixed hidden zone still showing title
+2.5.0 - Added staticsKeep logic to include Static Objects in numKeep
+      - Added enableVis and disableVis for explicit visibility control
+2.5.1 - Adjusted outText with Verbose and Announce gating
 --]]--
 cfxOwnedZones.requiredLibs = {
 	"dcsCommon", 
@@ -109,24 +117,26 @@ function cfxOwnedZones.drawZoneInMap(aZone)
 	if aZone.titleID then 
 		trigger.action.removeMark(aZone.titleID)
 	end 
-	
-	local lineColor = aZone.redLine -- {1.0, 0, 0, 1.0} -- red  
-	local fillColor = aZone.redFill -- {1.0, 0, 0, 0.2} -- red 
+
 	local owner = aZone.owner 
-	if owner == 2 then 
+	-- Default Neutral Colors
+	local lineColor = aZone.neutralLine -- {0.8, 0.8, 0.8, 1.0}
+	local fillColor = aZone.neutralFill -- {0.8, 0.8, 0.8, 0.2}
+
+	if owner == 1 then 
+		lineColor = aZone.redLine -- {1.0, 0, 0, 1.0} -- red  
+		fillColor = aZone.redFill -- {1.0, 0, 0, 0.2} -- red 
+	elseif owner == 2 then 
 		lineColor = aZone.blueLine -- {0.0, 0, 1.0, 1.0}
 		fillColor = aZone.blueFill -- {0.0, 0, 1.0, 0.2}
-	elseif owner == 0 then 
-		lineColor = aZone.neutralLine -- {0.8, 0.8, 0.8, 1.0}
-		fillColor = aZone.neutralFill -- {0.8, 0.8, 0.8, 0.2}
 	end
 	
-	if aZone.title then 
-		aZone.titleID = aZone:drawText(aZone.title, 18, lineColor, {0, 0, 0, 0})
-	end 
-	
-	if aZone.hidden then return end 	
-	aZone.markID = aZone:drawZone(lineColor, fillColor) -- markID 
+	if not aZone.hidden then 
+		if aZone.title then 
+			aZone.titleID = aZone:drawText(aZone.title, 18, lineColor, {0, 0, 0, 0})
+		end 
+		aZone.markID = aZone:drawZone(lineColor, fillColor) -- markID 
+	end
 end
 
 function cfxOwnedZones.getOwnedZoneByName(zName)
@@ -138,7 +148,22 @@ end
 
 function cfxOwnedZones.addOwnedZone(aZone)
 	local owner = aZone.owner 
-	
+
+	if aZone:hasProperty("toggleVis?") then
+		aZone.toggleVisFlag = aZone:getStringFromZoneProperty("toggleVis?", "none")
+		aZone.lastToggleVisValue = trigger.misc.getUserFlag(aZone.toggleVisFlag)
+	end
+
+	if aZone:hasProperty("disableVis?") then
+		aZone.disableVisFlag = aZone:getStringFromZoneProperty("disableVis?", "none")
+		aZone.lastToggleVisValue = trigger.misc.getUserFlag(aZone.disableVisFlag)
+	end
+
+	if aZone:hasProperty("enableVis?") then
+		aZone.enableVisFlag = aZone:getStringFromZoneProperty("enableVis?", "none")
+		aZone.lastToggleVisValue = trigger.misc.getUserFlag(aZone.enableVisFlag)
+	end
+
 	if aZone:hasProperty("conquered!") then 
 		aZone.conqueredFlag = aZone:getStringFromZoneProperty("conquered!", "*<cfxnone>")
 	end
@@ -306,17 +331,20 @@ function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral
 
 end
 
+
+
 function cfxOwnedZones.update()
 	-- to speed this up we might only want to check the first unit 
 	-- in group, and if inside, count the entire group as inside 
 	-- new. unit counting update 
 	cfxOwnedZones.updateSchedule = timer.scheduleFunction(cfxOwnedZones.update, {}, timer.getTime() + 1/cfxOwnedZones.ups)
+
 	-- iterate all groups and their units to count how many 
 	-- units are in each zone, also count how many zones each side has
 	local totalZoneNum = 0
+	local greyZoneNum = 0 
 	local blueZoneNum = 0
 	local redZoneNum = 0 
-	local greyZoneNum = 0 
 	
 	-- assemble all units in allRed and allBlue according to 
 	-- cap options (boots, ships, rotors, wings) 
@@ -346,19 +374,66 @@ function cfxOwnedZones.update()
 	
 	-- WARNING: we only proc ownedZones, NOT airfield nor FARP or other
 	for idz, theZone in pairs(cfxOwnedZones.zones) do 
-		theZone.numRed = 0
-		theZone.numBlue = 0 
+		-- See if the zone F10 Map visibility needs to change
+		if theZone.toggleVisFlag then
+			local currToggleVisTriggerVal = trigger.misc.getUserFlag(theZone.toggleVisFlag)
+			if currToggleVisTriggerVal ~= theZone.lastToggleVisValue then
+				theZone.lastToggleVisValue = currToggleVisTriggerVal
+				if theZone.hidden then
+					theZone.hidden = false
+				else
+					theZone.hidden = true
+				end
+				cfxOwnedZones.drawZoneInMap(theZone)
+			end
+		end
+
+		if theZone.enableVisFlag then
+			local currEnableVisTriggerVal = trigger.misc.getUserFlag(theZone.enableVisFlag)
+			if currEnableVisTriggerVal ~= theZone.lastEnableVisValue then
+				theZone.lastEnableVisValue = currEnableVisTriggerVal
+				theZone.hidden = false
+				cfxOwnedZones.drawZoneInMap(theZone)
+			end
+		end
+
+		if theZone.disableVisFlag then
+			local currDisableVisTriggerVal = trigger.misc.getUserFlag(theZone.disableVisFlag)
+			if currDisableVisTriggerVal ~= theZone.lastDisableVisValue then
+				theZone.lastDisableVisValue = currDisableVisTriggerVal
+				theZone.hidden = true 
+				cfxOwnedZones.drawZoneInMap(theZone)
+			end
+		end
+
+
+		-- Figure out the details of the zone changes
 		local lastOwner = theZone.owner
-		if not lastOwner then 
+
+		if not lastOwner then
+			-- No 'owner' attribute set, this is not an ownedZones Managed zone
 			trigger.action.outText("+++owdZ: WARNING - zone <" .. theZone.name .. "> has NIL owner", 30)
 			return 
 		end 
-		if theZone.verbose then 
-			trigger.action.outText("Zone <" .. theZone.name .. "> lastOwner is <" .. lastOwner .. ">", 30)
-		end 
-		local newOwner = 0 -- neutral is default 
-		-- count red units in zone 
-		if not theZone.masterOwner then 
+
+		-- Definitive Responses
+		-- This zone inherits control
+		if theZone.masterOwner then
+			newOwner = theZone.masterOwner.owner
+
+		-- This Zone is unbeatable, therefor static ownership
+		elseif theZone.unbeatable then
+			newOwner = lastOwner
+
+		-- Gotta Calculate Units in Zone
+		else
+			theZone.numRed = 0
+			theZone.numBlue = 0 
+			if theZone.verbose or cfxOwnedZones.verbose then  
+				trigger.action.outText("Zone <" .. theZone.name .. "> lastOwner is <" .. lastOwner .. ">", 30)
+			end 
+
+			-- count red units in zone 
 			for idx, aGroup in pairs(allRed) do 
 				if Group.isExist(aGroup) then 
 					if cfxOwnedZones.fastEval then 
@@ -456,94 +531,92 @@ function cfxOwnedZones.update()
 				end
 			end
 			
-			if theZone.verbose then 
+			if theZone.verbose or cfxOwnedZones.verbose then  
 				trigger.action.outText("+++owdZ: zone <" .. theZone.name .. ">: red inside: <" .. theZone.numRed .. ">, blue inside: <>" .. theZone.numBlue, 30)
 			end
-		else 
-			-- zone has master owner, no counting done 
-		end 
 		
-		if theZone.unbeatable then -- Parker Lewis can't lose. Neither this zone.
-			newOwner = lastOwner 
-		end
-		
-		-- determine new owner 
-		if theZone.unbeatable then 
-			-- we do nothing
-		elseif theZone.masterOwner then 
-			-- inherit from my master 
-			newOwner = theZone.masterOwner.owner
-		elseif theZone.numRed < 1 and theZone.numBlue < 1 then 
-			-- no troops here. Become neutral?
-			if theZone.numKeep < 1 then 
-				newOwner = lastOwner -- keep it, else turns neutral
-			else 
-				-- noone here, zone becomes neutral
-				newOwner = 0 -- not strictly required. to be explicit 
-			end
-		elseif theZone.numRed < 1 then 
-			-- only blue here. enough to keep? 
-			if theZone.numBlue >= theZone.numCap then 
-				newOwner = 2 -- blue owns it
-			elseif lastOwner == 2 and theZone.numBlue >= theZone.numKeep then 
-				-- enough to keep if owned before
-				newOwner = 2
-			else 
-				newOwner = 0 -- just to make it explicit
-			end 
-		elseif theZone.numBlue < 1 then 
-			-- only red here. enough to keep?
-			if theZone.numRed >= theZone.numCap then 
-				newOwner = 1 
-			elseif lastOwner == 1 and theZone.numRed >= theZone.numKeep then 
-				newOwner = 1 
-			else 
-				newOwner = 0 
-			end 				
-		else 
-			-- blue and red units here.
-			-- owner keeps hanging on only they have enough 
-			-- units left
-			if cfxOwnedZones.easyContest then 
-				-- this zone is immediately contested
-				newOwner = 0 -- just to be explicit 
-			elseif theZone.numKeep < 1 then 
-				-- old owner keeps it until none left 
+
+			-- Zone is empty
+			if theZone.numRed < 1 and theZone.numBlue < 1 then 
+				-- no troops hereBecome neutral?
+				if theZone.numKeep < 1 then 
+					newOwner = lastOwner -- keep it, else turns neutral
+				else 
+					-- noone here, zone becomes neutral
+					newOwner = 0 -- not strictly required. to be explicit 
+				end
+
+			-- No Red in Zone or No Blue in Zone
+			elseif theZone.numRed < 1 or theZone.numBlue < 1 then 
+				-- Leave the zone unchanged if we don't have enough to cap
 				newOwner = lastOwner
-			else
-				if lastOwner == 1 then 
-					-- red can keep it as long as enough units here 
-					if theZone.numRed >= theZone.numKeep then 
+
+				-- only red here. enough to cap?
+				if theZone.numRed >= theZone.numCap then 
+					newOwner = 1 -- red owns it
+				end
+
+				-- only blue here. enough to cap? 
+				if theZone.numBlue >= theZone.numCap then 
+					newOwner = 2 -- blue owns it
+				end
+
+			-- Contested Population of Red and Blue
+			else 
+				-- owner keeps hanging on only they have enough 
+				-- units left
+				if cfxOwnedZones.easyContest then 
+					-- this zone is immediately contested
+					newOwner = 0 -- just to be explicit 
+				elseif theZone.numKeep < 1 then 
+					-- old owner keeps it until none left 
+					newOwner = lastOwner
+				else
+					-- Order is important here
+					-- Red Takes from Blue
+					if theZone.numRed > theZone.numCap and theZone.numBlue < theZone.numKeep then
 						newOwner = 1
-					end -- else 0
-				elseif lastOwner == 2 then
-					-- blue can keep it if enough units here
-					if theZone.numBlue >= theZone.numKeep then 
+
+					-- Blue takes from Red
+					elseif theZone.numBlue > theZone.numCap and theZone.numRed < theZone.numKeep then
 						newOwner = 2
-					end -- else 0 
-				else -- stay 0 
+
+					-- Neither force large enough to hold, Contested Zone
+					elseif theZone.numRed < theZone.numKeep and theZone.numBlue < theZone.numKeep then
+						newOwner = 0
+					
+					-- Neither force is large enough to Cap, and not small enough to not keep
+					else
+						newOwner = lastOwner
+					end
 				end
 			end
-		end
-	
+		
+		end -- Gotta Calculate Units in Zone
+
 		-- now see if owner changed, and react accordingly 
 		if newOwner == lastOwner then 
 			-- nothing happened, do nothing 
 		else 
-			trigger.action.outText(theZone.name .. " change hands from  " .. lastOwner .. " to " .. newOwner, 30)
-			if newOwner == 0 then -- zone turned neutral 
-				cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
-			else
-				cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
+			if theZone.verbose or cfxOwnedZones.verbose then  
+				trigger.action.outText(theZone.name .. " change hands from  " .. lastOwner .. " to " .. newOwner, 30)
 			end
+			--if newOwner == 0 then -- zone turned neutral 
+			--	cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
+			--else
+			--	cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
+			--end
+			
+			cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
+			theZone.owner = newOwner
+
+			-- update ownership flag if exists
+			if theZone.ownedBy then 
+				theZone:setFlagValue(theZone.ownedBy, theZone.owner)
+			end
+	
 		end
-		theZone.owner = newOwner
-		
-		-- update ownership flag if exists
-		if theZone.ownedBy then 
-			theZone:setFlagValue(theZone.ownedBy, theZone.owner)
-		end
-		
+	
 		-- now add this zone to relevant side 
 		totalZoneNum = totalZoneNum + 1
 		if newOwner == 0 then 
@@ -553,7 +626,7 @@ function cfxOwnedZones.update()
 		else 
 			blueZoneNum = blueZoneNum + 1
 		end
-		
+
 	end -- iterating all zones 
 	
 	-- update totals 
@@ -842,6 +915,7 @@ function cfxOwnedZones.readConfigZone(theZone)
 	cfxOwnedZones.navalCap = theZone:getBoolFromZoneProperty("navalCap", false)
 	cfxOwnedZones.heloCap = theZone:getBoolFromZoneProperty("heloCap")
 	cfxOwnedZones.fixWingCap = theZone:getBoolFromZoneProperty("fixWingCap")
+	cfxOwnedZones.staticsKeep = theZone:getBoolFromZoneProperty("staticsKeep", false) -- Static Objects count in the numKeep count
 	
 	-- colors for line and fill 
 	cfxOwnedZones.redLine = theZone:getRGBAVectorFromZoneProperty("redLine", {1.0, 0, 0, 1.0})
