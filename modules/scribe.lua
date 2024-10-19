@@ -1,5 +1,5 @@
 scribe = {}
-scribe.version = "2.0.0"
+scribe.version = "2.0.3"
 scribe.requiredLibs = {
 	"dcsCommon", -- always
 	"cfxZones", -- Zones, of course 
@@ -13,19 +13,29 @@ VERSION HISTORY
 	1.0.1 postponed land, postponed takeoff, unit_lost 
 	1.1.0 supports persistence's SHARED ability to share data across missions
 	2.0.0 support for main menu 
+	2.0.1 Hardening for DCS Jul 11 patch issues 
+	2.0.2 Secondary landing events correction 
+	      support for DCS dynamic player spawns 
+	2.0.3 switch to polled tickTime counting instead of 
+		  uDelta, limiting max error to tickTime seconds 
+		  code cleanup 
+		  
 --]]--
 scribe.verbose = true 
 scribe.db = {} -- indexed by player name 
 scribe.playerUnits = {} -- indexed by unit name. for crash detection 
+scribe.dynamicPlayers = {}
 
 --[[--
 	unitEntry:
 		ttime -- total time in seconds 
 		airTime -- total air time 
 		landings -- number of landings 
-		lastLanding -- time of last landing OR DEPARTURE.  
+		lastLanding -- time of last landing !!OR!! DEPARTURE.  
 		departures -- toital take-offs 
 		crashes -- number of total crashes, deaths etc 
+		lastTime -- timestamp of last recording. NO LONGER USED 
+		
 --]]--
 
 function scribe.createUnitEntry()
@@ -86,8 +96,15 @@ function scribe.tickEntry(theEntry)
 	local now = timer.getTime()
 	local uEntry = theEntry.units[theEntry.lastUnitType]
 	if not uEntry then return 0 end -- can happen on idling server that has reloaded. all last players have invalid last units 
-	local delta = now - uEntry.lastTime
-	if delta < 0 then delta = 0 end 
+	local delta = now - uEntry.lastTime -- lastTime should be < now 
+	if delta < 0 then -- lastTime was later than now! reload?
+		delta = 0 
+	elseif delta > scribe.tickTime then -- limit error to tick time interval
+		if scribe.verbose then 
+			trigger.action.outText("Shortened tickEntry time from <" .. delta .. "> s to <" .. scribe.tickTime .. "> s", 30)
+		end 
+		delta = scribe.tickTime   
+	end -- NEW: max tickTime to limit error  
 	uEntry.lastTime = now 
 	uEntry.ttime = uEntry.ttime + delta 
 	return delta 
@@ -102,8 +119,7 @@ function scribe.finalizeEntry(theEntry)
 	local uEntry = theEntry.units[theEntry.lastUnitType]
 	if uEntry then 
 		uEntry.lastTime = 99999999 -- NOT math.huge 
-		
-		local deltaTime = dcsCommon.processHMS("<:h>:<:m>:<:s>", delta)
+		--local deltaTime = dcsCommon.processHMS("<:h>:<:m>:<:s>", delta)
 		local fullTime = dcsCommon.processHMS("<:h>:<:m>:<:s>", uEntry.ttime)
 		if scribe.byePlayer then 
 			trigger.action.outText("Player " .. theEntry.playerName .. " left " .. theEntry.lastUnitName .. " (a " .. theEntry.lastUnitType .. "), total time in aircraft " .. fullTime ..".", 30)
@@ -157,12 +173,22 @@ end
 -- Event handling 
 --
 function scribe.playerBirthedIn(playerName, theUnit)
-	-- access db 
-	local theEntry = scribe.getPlayerNamed(playerName) -- can be new
 	local myType = theUnit:getTypeName() 
 	local uName = theUnit:getName() 
 	local theGroup = theUnit:getGroup() 
 	local gID = theGroup:getID()
+	-- install menu if dynamic plane and not defined already 
+	if cfxMX.isDynamicPlayer(theUnit) then 
+		local gName = theGroup:getName() 
+		if not scribe.dynamicPlayers[gName] then 
+			scribe.installDynamicPlayerMenu(theUnit)
+			scribe.dynamicPlayers[gName] = true 
+		end
+	end
+	
+	-- access db 
+	local theEntry = scribe.getPlayerNamed(playerName) -- can be new
+	
 	-- check if this player is still active
 	if theEntry.isActive then 
 		-- do something to remedy this 
@@ -281,7 +307,7 @@ function scribe.playerLanded(playerName)
 	-- see if last landing is at least xx seconds old 
 	local now = timer.getTime()
 	delta = now - uEntry.lastLanding
-	if delta > scribe.landingCD or delta < 0 then 
+	if delta > scribe.landingCD then -- or delta < 0 then 
 		uEntry.landings = uEntry.landings + 1 
 	else 
 		if scribe.verbose then 
@@ -289,7 +315,6 @@ function scribe.playerLanded(playerName)
 		end 
 	end
 	uEntry.lastLanding = now 
-
 end
 
 function scribe.playerDeparted(playerName)
@@ -313,7 +338,6 @@ function scribe.playerDeparted(playerName)
 		end 
 	end
 	uEntry.lastLanding = now -- also for Departures!
-
 end
 
 --
@@ -342,6 +366,7 @@ function scribe:onEvent(theEvent)
 	if not theEvent.initiator then return end 
 	local theUnit = theEvent.initiator
 	if not theUnit then return end 
+	if not theUnit.getName then return end -- DCS bug hardening
 	local uName = theUnit:getName()
 	if scribe.playerUnits[uName]  and scribe.verbose then 
 		trigger.action.outText("+++scb: event <" .. theEvent.id .. " = " .. dcsCommon.event2text(theEvent.id)  .. ">, concerns player unit named <" .. uName .. ">.", 30)
@@ -362,10 +387,11 @@ function scribe:onEvent(theEvent)
 		return 
 	end 
 	-- when we get here we have a player event 
-	
 	-- players can only ever activate by birth event 
-	if theEvent.id == 15 then -- birth 
-		scribe.playerBirthedIn(playerName, theUnit) 
+	if theEvent.id == 15 
+	   or theEvent == 20 
+	then -- birth / enter unit  
+		scribe.playerBirthedIn(playerName, theUnit) -- reset timer for landings / take-off 
 		scribe.playerUnits[uName] = playerName -- for crash helo detection 
 	end 
 	
@@ -384,14 +410,13 @@ function scribe:onEvent(theEvent)
 	end 
 	
 	if theEvent.id == 4 or -- landed 
-	   theEvent.id == 56 then 
+	   theEvent.id == 55 then -- corrected to 55
 		scribe.playerLanded(playerName)
 	end 
 	
 	if theEvent.id == 3 or -- take-off
-	   theEvent.id == 55 then -- postponed take-off
+	   theEvent.id == 54 then -- postponed take-off, corrected to 54
 		scribe.playerDeparted(playerName)
---		trigger.action.outText("departure detected", 30)
 	end 
 	
 	if theEvent.id == 18 then -- engine start 
@@ -460,7 +485,7 @@ end
 -- GC -- detect player leaving 
 -- 
 function scribe.GC()
-	timer.scheduleFunction(scribe.GC, {}, timer.getTime() + 1)
+	timer.scheduleFunction(scribe.GC, {}, timer.getTime() + scribe.tickTime)
 	-- iterate through all players in DB and see if they 
 	-- are still on-line. 
 	for pName, theEntry in pairs(scribe.db) do 
@@ -468,7 +493,8 @@ function scribe.GC()
 			-- this player is on the books as in the game 
 			local theUnit = Unit.getByName(theEntry.lastUnitName)
 			if theUnit and Unit.isExist(theUnit) and theUnit:getLife() >= 1 then 
-				-- all is fine, go on 
+				-- all is fine, add a tick 
+				scribe.tickEntry(theEntry)
 			else 
 				-- this unit no longer exists and we finalize player 
 				if scribe.verbose then 
@@ -484,9 +510,32 @@ end
 --
 -- start
 -- 
+function scribe.installDynamicPlayerMenu(theUnit)
+	local mainMenu = nil 
+	if scribe.mainMenu then 
+		mainMenu = radioMenu.getMainMenuFor(scribe.mainMenu) -- nilling both next params will return menus[0]
+	end 
+	local unitInfo = {}
+	local theGroup = theUnit:getGroup() 
+	local coa = theGroup:getCoalition() 
+	local theType = theUnit:getTypeName()
+	local gName = theGroup:getName()
+	local uName = theUnit:getName() 
+	if scribe.verbose then 
+		trigger.action.outText("DYNAMIC unit <" .. uName .. ">: type <" .. theType .. "> coa <" .. coa .. ">, group <" .. gName .. ">", 30)
+	end 
+	unitInfo.uName = uName -- needed for reverse-lookup 
+	unitInfo.gName = gName -- also needed for reverse lookup 
+	unitInfo.coa = coa 
+	unitInfo.gID = theGroup:getID()
+	unitInfo.uID = theUnit:getID()
+	unitInfo.theType = theType
+	unitInfo.root = missionCommands.addSubMenuForGroup(unitInfo.gID, scribe.uiMenu, mainMenu)
+	unitInfo.checkData = missionCommands.addCommandForGroup(unitInfo.gID, "Get Pilot's Statistics", unitInfo.root, scribe.redirectCheckData, unitInfo)	
+end 
+
 function scribe.startPlayerGUI()
 	-- scan all mx players 
-	-- note: currently assumes single-player groups
 	-- in preparation of single-player 'commandForUnit'
 	-- ASSUMES SINGLE-UNIT PLAYER GROUPS!
 	local mainMenu = nil 
@@ -514,7 +563,7 @@ function scribe.startPlayerGUI()
 		unitInfo.gID = gData.groupId
 		unitInfo.uID = uData.unitId
 		unitInfo.theType = theType
-		unitInfo.cat = cfxMX.groupTypeByName[gName]
+--		unitInfo.cat = cfxMX.groupTypeByName[gName]
 		unitInfo.root = missionCommands.addSubMenuForGroup(unitInfo.gID, scribe.uiMenu, mainMenu)
 		unitInfo.checkData = missionCommands.addCommandForGroup(unitInfo.gID, "Get Pilot's Statistics", unitInfo.root, scribe.redirectCheckData, unitInfo)
 	end
@@ -548,6 +597,7 @@ function scribe.readConfigZone()
 		end 
 	end 	
 	
+	scribe.tickTime = theZone:getNumberFromZoneProperty("tickTime", 5) -- every 5 seconds, 5 second error max 
 	
 	scribe.greetPlayer = theZone:getBoolFromZoneProperty("greetPlayer", true)
 	scribe.byePlayer = theZone:getBoolFromZoneProperty("byebyePlayer", true) 
@@ -653,7 +703,7 @@ function scribe.start()
 	end
 	
 	-- start GC 
-	timer.scheduleFunction(scribe.GC, {}, timer.getTime() + 1)
+	timer.scheduleFunction(scribe.GC, {}, timer.getTime() + 1) -- in one second (fixed)
 	
 	-- say hi!
 	trigger.action.outText("cfx scribe v" .. scribe.version .. " started.", 30)

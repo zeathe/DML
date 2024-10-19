@@ -1,5 +1,5 @@
 persistence = {}
-persistence.version = "3.0.0"
+persistence.version = "3.0.2"
 persistence.ups = 1 -- once every 1 seconds 
 persistence.verbose = false 
 persistence.active = false 
@@ -18,7 +18,13 @@ persistence.requiredLibs = {
 	2.0.0 - dml zones, OOP
 			cleanup
 	3.0.0 - shared data 
-	
+	3.0.1 - shared data validations/fallback  
+	        API cleanup 
+			shared text data "flase" typo corrected (no impact)
+			code cleanup 
+	3.0.2 - more logging 
+	        vardump to log possible 
+			
 	PROVIDES LOAD/SAVE ABILITY TO MODULES
 	PROVIDES STANDALONE/HOSTED SERVER COMPATIBILITY
 --]]--
@@ -100,15 +106,6 @@ function persistence.getSavedDataForModule(name, sharedDataName)
 end
 
 --
--- Shared Data API 
---
-function persistence.getSharedDataFor(name, item) -- not yet finalized
-end
-
-function persistence.putSharedDataFor(data, name, item) -- not yet finalized
-end
-
---
 -- helper meths
 --
 
@@ -144,93 +141,84 @@ function persistence.saveText(theString, fileName, shared, append)
 		trigger.action.outText("+++persistence: saveText without fileName", 30)
 		return false 
 	end 
-	if not shared then shared = flase end 
+	if not shared then shared = false end 
 	if not theString then theString = "" end 
 	
 	local path = persistence.missionDir .. fileName
 	if shared then 
 		-- we would now change the path
 		trigger.action.outText("+++persistence: NYI: shared", 30)
-		return 
+		return false 
 	end
 
 	local theFile = nil 
-	
 	if append then 
 		theFile = io.open(path, "a")
 	else 
 		theFile = io.open(path, "w")
 	end
-
 	if not theFile then 
 		trigger.action.outText("+++persistence: saveText - unable to open " .. path, 30)
 		return false 
 	end
-	
 	theFile:write(theString)
-	
 	theFile:close()
-	
 	return true 
 end
 
 function persistence.saveTable(theTable, fileName, shared, append)
+	net.log("persistence: enter saveTable")
+
 	if not persistence.active then return false end 
 	if not fileName then return false end
 	if not theTable then return false end 
 	if not shared then shared = false end 
-	
+
+	net.log("persistence: before json conversion")
 	local theString = net.lua2json(theTable)
-	
+	net.log("persistence: json conversion complete")
+
 	if not theString then theString = "" end 
-	
 	local path = persistence.missionDir .. fileName
 	if shared then 
 		-- we change the path to shared 
 		path = persistence.sharedDir .. fileName .. ".txt" 
 	end
 	
+	net.log("persistence: will now open file at path <" .. path .. ">")
 	local theFile = nil 
-	
 	if append then 
 		theFile = io.open(path, "a")
 	else 
 		theFile = io.open(path, "w")
 	end
-
 	if not theFile then 
 		return false 
 	end
-	
+	net.log("persistence: will now write file")
 	theFile:write(theString)
-	
+	net.log("persistence: will now close file")
 	theFile:close()
-	
+	net.log("persistence: will now exit saveTable")
 	return true 
 end
 
 function persistence.loadText(fileName, hasPath) -- load file as text
 	if not persistence.active then return nil end 
 	if not fileName then return nil end
-	
 	local path 
 	if hasPath then 
 		path = fileName 
 	else 
 		path = persistence.missionDir .. fileName
 	end 
-	
 	if persistence.verbose then 
 		trigger.action.outText("persistence: will load text file <" .. path .. ">", 30)
 	end 
-	
 	local theFile = io.open(path, "r") 
 	if not theFile then return nil end
-	
 	local t = theFile:read("*a")
-	
 	theFile:close()
-	
 	return t
 end
 
@@ -238,13 +226,9 @@ function persistence.loadTable(fileName, hasPath) -- load file as table
 	if not persistence.active then return nil end 
 	if not fileName then return nil end
 	if not hasPath then hasPath = false end 
-
 	local t = persistence.loadText(fileName, hasPath)
-	
 	if not t then return nil end 
-	
 	local tab = net.json2lua(t)
-
 	return tab
 end
 
@@ -338,6 +322,35 @@ function persistence.missionStartDataLoad()
 end
 
 --
+-- logging data
+--
+function persistence.logTable(key, value, prefix, inrecursion)
+	local comma = ""
+	if inrecursion then 
+		if tonumber(key) then key = '[' .. key .. ']' else key = '["' .. key .. '"]' end
+		comma = ","
+	end 
+	if not value then value = false end -- not NIL!
+	if not prefix then prefix = "" else prefix = "\t" .. prefix end
+	if type(value) == "table" then -- recursively write a table
+		net.log(prefix .. key .. " = \n" .. prefix .. "{\n")
+		for k,v in pairs (value) do -- iterate all kvp
+			persistence.logTable(k, v, prefix, true)
+		end
+		net.log(prefix .. "}" .. comma .. " -- end of " .. key .. "\n")
+	elseif type(value) == "boolean" then 
+		local b = "false"
+		if value then b = "true" end
+		net.log(prefix .. key .. " = " .. b .. comma .. "\n")
+	elseif type(value) == "string" then -- quoted string, WITH proccing
+		value = string.gsub(value, "\\", "\\\\") -- escape "\" to "\\", others ignored, possibly conflict with \n
+		value = string.gsub(value, string.char(10), "\\" .. string.char(10)) -- 0A --> "\"0A
+		net.log(prefix .. key .. ' = "' .. value .. '"' .. comma .. "\n")
+	else -- simple var, show contents, ends recursion
+		net.log(prefix .. key .. " = " .. value .. comma .. "\n")
+	end
+end
+--
 -- MAIN DATA WRITE
 --
 function persistence.collectFlagData()
@@ -369,9 +382,10 @@ function persistence.saveMissionData()
 		
 	-- now handle flags 
 	myData["persistence.flagData"] = persistence.collectFlagData()
-	
+	net.log("persistence: --- START of module-individual save")
 	-- now handle all other modules 
 	for moduleName, callbacks in pairs(persistence.callbacks) do
+		net.log("persistence: invoking save for module " .. moduleName)
 		local moduleData, sharedName = callbacks.persistData()
 		if moduleData then 
 			if sharedName then -- save into shared bucket
@@ -380,23 +394,35 @@ function persistence.saveMissionData()
 				if not specificShared then specificShared = {} end
 				specificShared[moduleName] = moduleData
 				allSharedData[sharedName] = specificShared -- write back 
-			end
+			end -- !NO ELSE! WE ALSO STORE IN MAIN DATA FOR REDUNDANCY
 			myData[moduleName] = moduleData
 			if persistence.verbose then 
 				trigger.action.outText("+++persistence: gathered data from <" .. moduleName .. ">", 30)
 			end
+			net.log("persistence: got data for module: " .. moduleName)
+			--persistence.logTable(moduleName, moduleData)
+			--net.log("persistence: performing json conversion test for myData")
+			--local theString = net.lua2json(myData)
+			--net.log("persistence: json conversion success!")
 		else 
 			if persistence.verbose then 
 				trigger.action.outText("+++persistence: NO DATA gathered data from <" .. moduleName .. ">, module returned NIL", 30)
 			end
 		end 
+		net.log("persistence: completed save for module " .. moduleName)
 	end
+	net.log("persistence: --- END of module-individual save")
 	
 	-- now save data to file 
+	net.log("persistence: will now invoke main saveTable")
 	persistence.saveTable(myData, persistence.saveFileName)
-	
+	net.log("persistence: returned from main save table")
+
 	-- now save all shared name data as separate files 
+	net.log("persistence: will  now iterate shares")
 	for shareName, data in pairs (allSharedData) do 
+		net.log("persistence: share " .. shareName)
+
 		-- save into shared folder, by name that was returned from callback
 		-- read what was saved, and replace changed key/values from data
 		local shFile =  persistence.sharedDir .. shareName .. ".txt"
@@ -411,12 +437,15 @@ function persistence.saveMissionData()
 		
 		persistence.saveTable(theData, shareName, true) -- true --> shared
 	end 
+	net.log("persistence: done iterating shares")
+
 end
 
 --
 -- UPDATE 
 --
 function persistence.doSaveMission()
+	net.log("persistence: start doSaveMission")
 	-- main save entry, also from API 
 	if persistence.verbose then 
 		trigger.action.outText("+++persistence: starting save", 30)
@@ -434,6 +463,7 @@ function persistence.doSaveMission()
 	if persistence.saveNotification then 
 		trigger.action.outText("+++persistence: mission saved to\n" .. persistence.missionDir .. persistence.saveFileName, 30)
 	end
+	net.log("persistence: DONE doSaveMission")
 end
 
 function persistence.noteCleanRestart()

@@ -48,6 +48,8 @@ cfxOwnedZones.name = "cfxOwnedZones"
 2.3.2 - Updated update() logic to be more streamlined
 2.4.0 - Added toggleVis logic to show/hide zones dynamically
 2.4.1 - Fixed hidden zone still showing title
+2.4.2 - dmlZones masterOwner update 
+2.4.3 - conquered flag now correctly guarded in loadData() 
 2.5.0 - Added staticsKeep logic to include Static Objects in numKeep
       - Added enableVis and disableVis for explicit visibility control
 2.5.1 - Adjusted outText with Verbose and Announce gating
@@ -830,7 +832,7 @@ function cfxOwnedZones.loadData()
 		local theZone = cfxOwnedZones.getOwnedZoneByName(zName)
 		if theZone then 
 			theZone.owner = zData.owner 
-			if zData.conquered then 
+			if zData.conquered and theZone.conqueredFlag then 
 				theZone:setFlagValue(theZone.conqueredFlag, zData.conquered)
 			end
 			-- update mark in map 

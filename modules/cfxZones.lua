@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.3.4"
+cfxZones.version = "4.4.2" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -9,38 +9,6 @@ cfxZones.version = "4.3.4"
 --
 
 --[[-- VERSION HISTORY
-- 4.0.0   - dmlZone OOP API started 
-		  - code revision / refactoring 
-		  - moved createPoint and copxPoint to dcsCommon, added bridging code 
-		  - re-routed all createPoint() invocations to dcsCommon 
-		  - removed anyPlayerInZone() because of cfxPlayer dependency
-		  - numberArrayFromString() moved to dcsCommon, bridged 
-		  - flagArrayFromString() moved to dcsCommon, bridged 
-		  - doPollFlag() can differentiate between number method and string method 
-		    to enable passing an immediate negative value 
-		  - getNumberFromZoneProperty() enforces number return even on default
-		  - immediate method switched to preceeding '#', to resolve conflict witzh 
-		    negative numbers, backwards compatibility with old (dysfunctional) method 
-- 4.0.1   - dmlZone:getName()
-- 4.0.2   - removed verbosity from declutterZone (both versions)
-- 4.0.3   - new processDynamicVZU()
-	      - wildcard uses processDynamicVZU
-- 4.0.4   - setFlagValue now supports multiple flags (OOP and classic)
-		  - doSetFlagValue optimizations 
-- 4.0.5   - dynamicAB wildcard 
-		  - processDynamicValueVU
-- 4.0.6   - hash mark forgotten QoL
-- 4.0.7   - drawZone()
-- 4.0.8   - markZoneWithObjects()
-		  - cleanup 
-		  - markCenterWithObject
-		  - markPointWithObject
-- 4.0.9   - createPolyZone now correctly returns new zone 
-		  - createSimplePolyZone correctly passes location to createPolyZone 
-		  - createPolyZone now correctly sets zone.point
-		  - createPolyZone now correctly inits dcsOrigin
-		  - createCircleZone noew correctly inits dcsOrigin
-- 4.0.10  - getBoolFromZoneProperty also supports "on" (=true) and "off" (=false)
 - 4.1.0   - getBoolFromZoneProperty 'on/off' support for dml variant as well 
 - 4.1.1   - evalRemainder() updates 
 - 4.1.2   - hash property missing warning 
@@ -49,10 +17,21 @@ cfxZones.version = "4.3.4"
 		  - small optimization for randomInRange()
 		  - randomDelayFromPositiveRange also allows 0 
 - 4.3.1   - new drawText() for zones 
-		  - dmlZones:getClosestZone() bridge 
+		  - dmlZone:getClosestZone() bridge 
 - 4.3.2   - new getListFromZoneProperty()
 - 4.3.3   - hardened calculateZoneBounds
 - 4.3.4   - rewrote zone bounds for poly zones 
+- 4.3.5   - hardened getStringFromZoneProperty against number value returns (WebEd bug)
+- 4.3.6   - tiny optimization in isPointInsideQuad 
+          - moving zone - hardening code for static objects 
+		  - moving zones - now deriving dx, dy,uHeading from dcsCommon xref for linked zones 
+- 4.3.7   - corrected bug in processDynamicValues for lookup table 
+- 4.4.0   - dmlZone:getCoalition() 
+		  - dmlZone:getTypeName()
+		  - dmlZone supports masterOwner by default 
+		  - dmlZone:getCoalition() dereferences masterOwner once 
+-4.4.1	  - better verbosity for error in doPollFlag()
+-4.4.2    - twn support for wildcards <twn: > and <loc:>
 --]]--
 
 --
@@ -75,6 +54,13 @@ function dmlZone:new(o)
 	self.properties = {}
 	return o 
 end 
+
+-- dmlZone compatibility with DCS MSE objects: 
+-- dmlZone:getName() -- returns zone.name attribute (from ME)
+-- dmlZone:getPoint() -- returns current point or dmlPoint 
+-- dmlZone:getTypeName() -- returns "dmlZone" 
+-- dmlZone:getCoalition  -- returns owner 
+
 
 --
 -- CLASSIC INTERFACE
@@ -208,7 +194,7 @@ function cfxZones.readFromDCS(clearfirst)
 
 			-- add to my table
 			cfxZones.zones[upperName] = newZone -- WARNING: UPPER ZONE!!!
-			--trigger.action.outText("znd: procced " .. newZone.name .. " with radius " .. newZone.radius, 30)
+
 		else
 			if cfxZones.verbose then 
 				trigger.action.outText("cf/x zones: malformed zone #" .. i .. " dropped", 10)
@@ -706,7 +692,7 @@ function cfxZones.isPointInsideQuad(thePoint, A, B, C, D)
 	
 	-- so all we need to do is make sure all results of isLeft for all
 	-- four sides are the same
-	mustMatch = isLeftXZ(A, B, thePoint) -- all test results must be the same and we are ok
+	local mustMatch = isLeftXZ(A, B, thePoint) -- all test results must be the same and we are ok
 									   -- they just must be the same side.
 	if (cfxZones.isLeftXZ(B, C, thePoint ~= mustMatch)) then return false end -- on other side than all before
 	if (cfxZones.isLeftXZ(C, D, thePoint ~= mustMatch)) then return false end 
@@ -1610,7 +1596,7 @@ function cfxZones.doPollFlag(theFlag, method, theZone) -- no OOP equivalent
 
 	else 
 		if method ~= "on" and method ~= "f=1" then 
-			trigger.action.outText("+++zones: unknown method <" .. method .. "> - using 'on'", 30)
+			trigger.action.outText("+++zones: unknown method <" .. method .. "> for flag <" .. theFlag .. "> in zone <" .. theZone.name .. "> - setting to 1", 30)
 		end
 		-- default: on.
 --		trigger.action.setUserFlag(theFlag, 1)
@@ -2220,6 +2206,9 @@ function cfxZones.getStringFromZoneProperty(theZone, theProperty, default)
 -- OOP heavy duty test here
 	local p = theZone:getZoneProperty(theProperty)
 	if not p then return default end
+	if type(p) == "number" then 
+		p = tostring(p)
+	end 
 	if type(p) == "string" then 
 		p = dcsCommon.trim(p)
 		if p == "" then p = default end 
@@ -2232,6 +2221,9 @@ function dmlZone:getStringFromZoneProperty(theProperty, default)
 	if not default then default = "" end
 	local p = self:getZoneProperty(theProperty)
 	if not p then return default end
+	if type(p) == "number" then 
+		p = tostring(p)
+	end 
 	if type(p) == "string" then 
 		p = dcsCommon.trim(p)
 		if p == "" then p = default end 
@@ -2911,7 +2903,7 @@ function cfxZones.processDynamicValues(inMsg, theZone, msgResponses)
 				-- access flag
 				local val = cfxZones.getFlagValue(param, theZone)
 				if not val or (val < 1) then val = 1 end 
-				if val > msgResponses then val = msgResponses end 
+				if val > #msgResponses then val = #msgResponses end 
 				
 				val = msgResponses[val]
 				val = dcsCommon.trim(val)
@@ -2957,7 +2949,7 @@ end
 
 -- process <lat/lon/ele/mgrs/lle/latlon/alt/vel/hdg/rhdg/type/player: zone/unit>
 function cfxZones.processDynamicLoc(inMsg, imperialUnits, responses)
-	local locales = {"lat", "lon", "ele", "mgrs", "lle", "latlon", "alt", "vel", "hdg", "rhdg", "type", "player"}
+	local locales = {"lat", "lon", "ele", "mgrs", "lle", "latlon", "alt", "vel", "hdg", "rhdg", "type", "player", "twn", "loc"}
 	local outMsg = inMsg
 	local uHead = 0
 	for idx, aLocale in pairs(locales) do 
@@ -3042,6 +3034,23 @@ function cfxZones.processDynamicLoc(inMsg, imperialUnits, responses)
 					elseif aLocale == "rhdg" and (responses) then 
 						local offset = cfxZones.rspMapper360(uHead, #responses)
 						locString = dcsCommon.trim(responses[offset])
+					elseif aLocale == "twn" then 
+						if twn and towns then locString = twn.closestTownTo(thePoint)
+						else locString = "!twn!" end 
+					elseif aLocale == "loc" then
+						if twn and towns then 
+							local name, data, dist = twn.closestTownTo(thePoint)
+							local units = "km"
+							local mdist= dist * 0.539957
+							dist = math.floor(dist/100) / 10
+							mdist = math.floor(mdist/100) / 10		
+							if imperialUnits then 
+								dist = mdist
+								units = "nm"
+							end 
+							local bear = dcsCommon.compassPositionOfARelativeToB(thePoint, data.p)
+							locString = dist .. units .. " " .. bear .. " of " .. name
+						else locString = "!twn!" end 
 					else 
 						-- we have mgrs
 						local grid = coord.LLtoMGRS(coord.LOtoLL(thePoint))
@@ -3334,6 +3343,24 @@ function dmlZone:getName() -- no cfxZones.bridge!
 	return self.name 
 end
 
+function dmlZone:getCoalition()
+	-- automatically support masterOwner. Warning: cloners etc can reference itself! 
+	if self.masterOwner then return self.masterOwner.owner end -- zone must exist 
+	return self.owner 
+end 
+
+function cfxZones.getCoalition(theZone)
+	return theZone:getCoalition()
+end
+
+function dmlZone:getTypeName()
+	return "dmlZone"
+end
+
+function cfxZones.getTypeName(theZone)
+	return theZone:getTypeName()
+end 
+
 function cfxZones.linkUnitToZone(theUnit, theZone, dx, dy) -- note: dy is really Z, don't get confused!!!!
 	theZone.linkedUnit = theUnit
 	if not dx then dx = 0 end
@@ -3341,7 +3368,9 @@ function cfxZones.linkUnitToZone(theUnit, theZone, dx, dy) -- note: dy is really
 	theZone.dx = dx
 	theZone.dy = dy 
 	theZone.rxy = math.sqrt(dx * dx + dy * dy) -- radius 
-	local unitHeading = dcsCommon.getUnitHeading(theUnit)
+	local uName = theUnit:getName()
+--	local unitHeading = dcsCommon.getUnitHeading(theUnit)
+	local unitHeading = dcsCommon.unitName2Heading[uName] -- get original unit's heading from ME 
 	local bearingOffset = math.atan2(dy, dx) -- rads 
 	if bearingOffset < 0 then bearingOffset = bearingOffset + 2 * 3.141592 end 
 
@@ -3431,8 +3460,9 @@ function cfxZones.updateMovingZones()
 				cfxZones.initLink(aZone)
 			else --if aZone.linkName then  
 				-- always re-acquire linkedUnit via Unit.getByName()
-				-- this way we gloss over any replacements via spawns
+				-- this way we gloss over any replacements via spawns/clones 
 				aZone.linkedUnit = Unit.getByName(aZone.linkName)
+				if not aZone.linkUnit then aZone.linkUnit = StaticObject.getByName(aZone.linkName) end 
 			end
 			
 			if aZone.linkedUnit then 
@@ -3465,14 +3495,15 @@ end
 function cfxZones.initLink(theZone)
 	theZone.linkBroken = true 
 	theZone.linkedUnit = nil 
-	theUnit = Unit.getByName(theZone.linkName)
+	theUnit = Unit.getByName(theZone.linkName) -- unit or static
+	if not theUnit then theUnit = StaticObject.getByName(theZone.linkName) end 
 	if theUnit then
-
 		local dx = 0
 		local dz = 0
 		if theZone.useOffset or theZone.useHeading then 
 			local A = cfxZones.getDCSOrigin(theZone)
-			local B = theUnit:getPoint()
+			local B = dcsCommon.getOrigPositionByID(theZone.linkedUID)
+
 			local delta = dcsCommon.vSub(A,B) 
 			dx = delta.x 
 			dz = delta.z
@@ -3483,7 +3514,6 @@ function cfxZones.initLink(theZone)
 			trigger.action.outText("Link established for zone <" .. theZone.name .. "> to unit <" .. theZone.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
 		end 
 		theZone.linkBroken = nil 
-
 	else 
 		if theZone.verbose then 
 			trigger.action.outText("Linked unit: no unit <" .. theZone.linkName .. "> to link <" .. theZone.name .. "> to", 30)
@@ -3494,14 +3524,14 @@ end
 function dmlZone:initLink()
 	self.linkBroken = true 
 	self.linkedUnit = nil 
-	theUnit = Unit.getByName(self.linkName)
+	theUnit = Unit.getByName(self.linkName) -- unit or static 
+	if not theUnit then theUnit = StaticObject.getByName(self.linkName) end 
 	if theUnit then
-
 		local dx = 0
 		local dz = 0
 		if self.useOffset or self.useHeading then 
 			local A = self:getDCSOrigin()
-			local B = theUnit:getPoint()
+			local B = dcsCommon.getOrigPositionByID(self.linkedUID)
 			local delta = dcsCommon.vSub(A,B) 
 			dx = delta.x 
 			dz = delta.z
@@ -3509,7 +3539,7 @@ function dmlZone:initLink()
 		self:linkUnitToZone(theUnit, dx, dz) -- also sets theZone.linkedUnit
 
 		if self.verbose then 
-			trigger.action.outText("Link established for zone <" .. self.name .. "> to unit <" .. self.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
+			trigger.action.outText("DML:Link established for zone <" .. self.name .. "> to unit <" .. self.linkName .. ">: dx=<" .. math.floor(dx) .. ">, dz=<" .. math.floor(dz) .. "> dist = <" .. math.floor(math.sqrt(dx * dx + dz * dz)) .. ">" , 30)
 		end 
 		self.linkBroken = nil 
 
@@ -3531,27 +3561,33 @@ function cfxZones.startMovingZones()
 		-- late 2022 with 2.8
 		if aZone.dcsZone.linkUnit then 
 			local theID = aZone.dcsZone.linkUnit 
-			lU = dcsCommon.getUnitNameByID(theID)
+			lU = dcsCommon.getUnitNameByID(theID) -- can be unit OR STATIC OBJECT 
 			if not lU then 
 				trigger.action.outText("WARNING: Zone <" .. aZone.name .. ">: cannot resolve linked unit ID <" .. theID .. ">", 30)
 				lU = "***DML link err***"
 			end
-		elseif cfxZones.hasProperty(aZone, "linkedUnit") then 
-			lU = cfxZones.getZoneProperty(aZone, "linkedUnit")
+			aZone.linkedUID = lU
+		elseif aZone:hasProperty("linkedUnit") then 
+			lU = aZone:getZoneProperty("linkedUnit") -- getString: name of unit
+			local luid = dcsCommon.unitName2ID[lU]
+			if luid then
+				aZone.linkedUID = luid 
+			else 
+				trigger.action.outText("WARNING: zone <" .. aZone.name .. "> linked unit (by attribute) <" .. lU .. "> does not exist!", 30)
+				lU = nil 
+			end 
 		end
 		
 		-- sanity check 
-		if aZone.dcsZone.linkUnit and cfxZones.hasProperty(aZone, "linkedUnit") then 
+		if aZone.dcsZone.linkUnit and aZone:hasProperty("linkedUnit") then 
 			trigger.action.outText("WARNING: Zone <" .. aZone.name .. "> has dual unit link definition. Will use link to unit <" .. lU .. ">", 30)
 		end
 		
 		if lU then 
 			aZone.linkName = lU
-			aZone.useOffset = cfxZones.getBoolFromZoneProperty(aZone, "useOffset", false)
-			aZone.useHeading = cfxZones.getBoolFromZoneProperty(aZone, "useHeading", false)
-			
+			aZone.useOffset = aZone:getBoolFromZoneProperty("useOffset", false)
+			aZone.useHeading = aZone:getBoolFromZoneProperty("useHeading", false)
 			cfxZones.initLink(aZone)
-
 		end
 		
 	end
@@ -3673,6 +3709,20 @@ function cfxZones.init()
 	-- much like verbose, all zones have owner
     for n, aZone in pairs(cfxZones.zones) do
 		aZone.owner = cfxZones.getCoalitionFromZoneProperty(aZone, "owner", 0)
+		
+		if aZone:hasProperty("masterOwner") then 
+			local mo = aZone:getStringFromZoneProperty("masterOwner", "forgotten master")
+			mo = dcsCommon.trim(mo)
+			if mo == "*" then mo = aZone.name end 
+			local mz = cfxZones.getZoneByName(mo)
+			if not mz then 
+				trigger.action.outText("+++fcxZones: WARNING: Master Owner <" .. mo .. "> for zone <" .. aZone.name .. "> does not exist!", 30)
+			else 
+				aZone.masterOwner = mz 
+				aZone.owner = mz.owner 
+			end
+		end
+
 	end
 		
 	-- enable all zone's verbose flags if present

@@ -1,5 +1,5 @@
 williePete = {}
-williePete.version = "2.0.3"
+williePete.version = "2.1.0"
 williePete.ups = 10 -- we update at 10 fps, so accuracy of a 
 -- missile moving at Mach 2 is within 33 meters, 
 -- with interpolation even at 3 meters
@@ -20,6 +20,10 @@ williePete.requiredLibs = {
 	2.0.1 - added Harrier's FFAR M156 WP
 	2.0.2 - hardened playerUpdate() 
 	2.0.3 - further hardened playerUpdate()
+	2.0.4 - support for the Kiowa's Hydra M259 
+	2.0.5 - support for Mirage F1 WP that differ from Gazelle (?)
+	2.0.6 - DCS Update 7-11 2024 weapon name bug 
+	2.1.0 - DCS update 2.9.6 dynamic spawn support 
 --]]--
 
 williePete.willies = {}
@@ -31,7 +35,9 @@ williePete.blastedObjects = {} -- used when we detonate something
 
 -- recognizes WP munitions. May require regular update when new
 -- models come out. 
-williePete.smokeWeapons = {"HYDRA_70_M274","HYDRA_70_MK61","HYDRA_70_MK1","HYDRA_70_WTU1B","HYDRA_70_M156","HYDRA_70_M158","BDU_45B","BDU_33","BDU_45","BDU_45LGB","BDU_50HD","BDU_50LD","BDU_50LGB","C_8CM", "SNEB_TYPE254_H1_GREEN", "SNEB_TYPE254_H1_RED", "SNEB_TYPE254_H1_YELLOW", "FFAR M156 WP"}
+williePete.smokeWeapons = {"HYDRA_70_M274","HYDRA_70_MK61","HYDRA_70_MK1","HYDRA_70_WTU1B","HYDRA_70_M156","HYDRA_70_M158","BDU_45B","BDU_33","BDU_45","BDU_45LGB","BDU_50HD","BDU_50LD","BDU_50LGB","C_8CM", "SNEB_TYPE254_H1_GREEN", "SNEB_TYPE254_H1_RED", "SNEB_TYPE254_H1_YELLOW",
+"SNEB_TYPE254_F1B_YELLOW", "SNEB_TYPE254_F1B_GREEN", "SNEB_TYPE254_F1B_RED", "FFAR M156 WP",
+"HYDRA_70_M259"}
 
 function williePete.addWillie(theWillie)
 	table.insert(williePete.willies, theWillie)
@@ -130,6 +136,53 @@ end
 --
 -- PLAYER MANAGEMENT
 --
+function williePete.latePlayerGUI(theUnit)
+	local unitInfo = {}
+	unitInfo.name = theUnit:getName() -- needed for reverse-lookup 
+	local theGroup = theUnit:getGroup()
+	unitInfo.gName = theGroup:getName() -- gName -- also needed for reverse lookup 
+	unitInfo.coa = theGroup:getCoalition() -- coa 
+	unitInfo.gID = theGroup:getID() -- gData.groupId
+	unitInfo.uID = theUnit:getID() -- uData.unitId
+	unitInfo.theType = theUnit:getTypeName() -- theType
+	cat = theGroup:getCategory() 
+	if cat == 0 then unitInfo.cat = "plane" 
+	elseif cat == 1 then unitInfo.cat = "helicopter"
+	else
+		return -- whatever player is controlling, it's not for WP
+	end 
+		
+	williePete.doGUIforUnitInfo(unitInfo)
+end
+
+function williePete.doGUIforUnitInfo(unitInfo)
+	local pass = false 
+	local uName = unitInfo.name
+	local gName = unitInfo.gName	
+	
+	for idx, aType in pairs(williePete.facTypes) do 
+		if aType == "ALL" then pass = true end 
+		if aType == "ANY" then pass = true end 
+		if aType == theType then pass = true end 
+		if dcsCommon.stringStartsWith(aType, "HEL") and unitInfo.cat == "helicopter" then pass = true end 
+		if dcsCommon.stringStartsWith(aType, "PLAN") and unitInfo.cat == "plane" then pass = true end 
+	end
+	
+	if pass then -- we install a menu for this group 
+		-- we may not want check in stuff, but it could be cool
+		if williePete.playerGUIs[gName] then 
+			trigger.action.outText("+++WP: Warning: we already have WP menu for unit <" .. uName .. "> in group <" .. gName .. ">. Skipped.", 30)
+		elseif williePete.groupGUIs[gName] then 
+			trigger.action.outText("+++WP: Warning: POSSIBLE MULTI-PLAYER UNIT GROUP DETECTED. We already have WP menu for Player Group <" .. gName .. ">. Skipped, only first unit supported. ", 30)
+		else 
+			unitInfo.root = missionCommands.addSubMenuForGroup(unitInfo.gID, "FAC")
+			unitInfo.checkIn = missionCommands.addCommandForGroup(unitInfo.gID, "Check In", unitInfo.root, williePete.redirectCheckIn, unitInfo)
+			williePete.groupGUIs[gName] = unitInfo
+			williePete.playerGUIs[gName] = unitInfo
+		end
+	end 
+end
+
 function williePete.startPlayerGUI()
 	-- scan all mx players 
 	-- note: currently assumes single-player groups
@@ -155,7 +208,7 @@ function williePete.startPlayerGUI()
 		unitInfo.theType = theType
 		unitInfo.cat = cfxMX.groupTypeByName[gName]
 		-- now check type against willie pete config for allowable types 
-		local pass = false 
+--[[--		local pass = false 
 		for idx, aType in pairs(williePete.facTypes) do 
 			if aType == "ALL" then pass = true end 
 			if aType == "ANY" then pass = true end 
@@ -177,7 +230,8 @@ function williePete.startPlayerGUI()
 				williePete.playerGUIs[gName] = unitInfo
 			end
 		end 
-		
+--]]--
+		williePete.doGUIforUnitInfo(unitInfo)
 		-- store it - WARNING: ASSUMES SINGLE-UNIT Player Groups 
 		--williePete.playerGUIs[uName] = unitInfo
 	end
@@ -463,7 +517,7 @@ end
 
 function williePete.zedsDead(theObject) 
 	if not theObject then return end 
-	
+	if not theObject.getName then return end -- DCS July-11 oddity. 
 	local theName = theObject:getName()
 	-- now check if it's a registered blasted object:getSampleRate()
 	-- in multi-unit player groups, this can can lead to 
@@ -486,6 +540,14 @@ end
 
 function williePete:onEvent(event)
 	if not event.initiator then 
+		return 
+	end 
+	
+	-- see if a dynamic spawn 
+	if event.id == 15 then 
+		local theUnit = event.initiator
+		if not cfxMX.isDynamicPlayer(theUnit) then return end 
+		williePete.latePlayerGUI(theUnit)
 		return 
 	end 
 	

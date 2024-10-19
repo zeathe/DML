@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.0.8"
+dcsCommon.version = "3.1.3"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -20,23 +20,46 @@ dcsCommon.version = "3.0.8"
 	   - new pointXpercentYdegOffAB()
 3.0.6  - new arrayContainsStringCaseInsensitive()
 3.0.7  - fixed small bug in wildArrayContainsString 
-3.0.8  - deepCopy() and deepTableCopy() alternates to clone() to patch 
+3.0.9  - deepCopy() and deepTableCopy() alternates to clone() to patch 
          around a strange DCS 2.9 issue 
 		 Kiowa added to Troop Carriers
-		 
+3.0.9  - new getOrigPositionByID()
+       - unitName2ID[] reverse lookup 
+	   - unitName2Heading
+3.1.0  - updates to events, DCS update 7-11 2024 hardening 
+3.1.1  - added Chinook to troop carriers
+3.1.2  - isTroopCarrier() hardening against DCS sillieness
+3.1.3  - new dcsCommon.unitIsOfLegalType() analogue to isTroopCarrier 
+	   - new DCS Patch section
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
 	-- for easy access and simple mission programming
 	-- (c) 2021 - 2024 by Christian Franz and cf/x AG
 
+--
+-- DCS API PATCHES FOR DCS-INTERNAL BUGS
+--
+
+Group.getByNameBase = Group.getByName -- thanks, Dzsekeb(?)
+
+function Group.getByName(name) -- patch getByName to protect against empty groups 
+    local g = Group.getByNameBase(name)
+    if not g then return nil end
+    if g:getSize() == 0 then return nil end
+    return g
+end
+
+--
+-- DML FOUNDATION
+--
 	dcsCommon.verbose = false -- set to true to see debug messages. Lots of them
 	dcsCommon.uuidStr = "uuid-"
 	dcsCommon.simpleUUID = 76543 -- a number to start. as good as any
 	
 	-- globals
 	dcsCommon.cbID = 0 -- callback id for simple callback scheduling
-	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D"} -- Ka-50, Apache and Gazelle can't carry troops
+	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D", "CH-47Fbl1"} -- Ka-50, Apache and Gazelle can't carry troops, the Kiowa can!
 	dcsCommon.coalitionSides = {0, 1, 2}
 	dcsCommon.maxCountry = 86 -- number of countries defined in total 
 	
@@ -45,6 +68,8 @@ dcsCommon.version = "3.0.8"
 	dcsCommon.unitID2Name = {}
 	dcsCommon.unitID2X = {}
 	dcsCommon.unitID2Y = {}
+	dcsCommon.unitName2ID = {}
+	dcsCommon.unitName2Heading = {}
 
 	-- verify that a module is loaded. obviously not required
 	-- for dcsCommon, but all higher-order modules
@@ -97,15 +122,18 @@ dcsCommon.version = "3.0.8"
 											local aID = group_data.groupId
 											-- store this reference 
 											dcsCommon.groupID2Name[aID] = aName 
-											
+--											trigger.action.outText("cmn: group <" .. aName .. "> has id <" .. aID .. ">", 30)
 											-- now iterate all units in this group 
 											-- for player into 
 											for unit_num, unit_data in pairs(group_data.units) do
 												if unit_data.name and unit_data.unitId then 
 													-- store this reference 
 													dcsCommon.unitID2Name[unit_data.unitId] = unit_data.name
+--													trigger.action.outText("cmn: unit/obj <" .. unit_data.name .. "> has id <" .. unit_data.unitId .. ">", 30)
+													dcsCommon.unitName2Heading[unit_data.name] = unit_data.heading
 													dcsCommon.unitID2X[unit_data.unitId] = unit_data.x
 													dcsCommon.unitID2Y[unit_data.unitId] = unit_data.y
+													dcsCommon.unitName2ID[unit_data.name] = unit_data.unitId
 												end
 											end -- for all units
 										end -- for all groups 
@@ -121,8 +149,13 @@ dcsCommon.version = "3.0.8"
 
 	function dcsCommon.getUnitNameByID(theID)
 		-- accessor function for later expansion
-		return dcsCommon.unitID2Name[theID]
+		return dcsCommon.unitID2Name[theID] -- warning: can be unit or static object 
 	end
+	
+	function dcsCommon.getOrigPositionByID(theID)
+		local p = {x=dcsCommon.unitID2X[theID], y=0, z=dcsCommon.unitID2Y[theID]}
+		return p 
+	end 
 	
 	function dcsCommon.getGroupNameByID(theID)
 		-- accessor function for later expansion 
@@ -694,7 +727,7 @@ dcsCommon.version = "3.0.8"
 	end
 	
 	function dcsCommon.compassPositionOfARelativeToB(A, B)
-		-- warning: is REVERSE in order for bearing, returns a string like 'Sorth', 'Southwest'
+		-- warning: is REVERSE in order for bearing, returns a string like 'North', 'Southwest'
 		if not A then return "***error:A***" end
 		if not B then return "***error:B***" end
 		local bearing = dcsCommon.bearingInDegreesFromAtoB(B, A) -- returns 0..360
@@ -2553,9 +2586,10 @@ end
 						"Pilot Suicide", "player cap airfield", "emergency landing", "unit create task", -- 44
 						"unit delete task", "Simulation start", "weapon rearm", "weapon drop", -- 48
 						"unit task timeout", "unit task stage", -- 50
-						"subtask score", "extra score", "mission restart", "winner", 
-						"postponed takeoff", "postponed land", -- 56
-						"max"}
+						"subtask score", "mission restart", "winner", -- 53
+						"runway takeoff", "runway touchdown", "LMS Restart", -- 56
+						"sim freeze", "sum unfreeze", "player start repair", "player end repair", --60
+						"max",} -- 61
 		if id > #events then return "Unknown (ID=" .. id .. ")" end
 		return events[id]
 	end
@@ -2823,12 +2857,16 @@ function dcsCommon.isTroopCarrierType(theType, carriers)
 	return false
 end
 
+function dcsCommon.unitIsOfLegalType(theUnit, types)
+	return dcsCommon.isTroopCarrier(theUnit, types)
+end
+
 function dcsCommon.isTroopCarrier(theUnit, carriers)
 	-- return true if conf can carry troups
 	if not theUnit then return false end
-
+	if not theUnit.getTypeName then return false end -- hardening against DCS sillieness
 	-- see if carriers contains "helo" and theUnit is a helo 
-	if dcsCommon.arrayContainsString(carriers, "helo") or dcsCommon.arrayContainsString(carriers, "helos")then
+	if dcsCommon.arrayContainsString(carriers, "helo") or dcsCommon.arrayContainsString(carriers, "helos") then
 		local grp = theUnit:getGroup() 
 		if grp:getCategory() == 1 then -- NOT category bug prone, is a group check 
 			return true 

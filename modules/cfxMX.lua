@@ -1,5 +1,5 @@
 cfxMX = {}
-cfxMX.version = "2.0.1"
+cfxMX.version = "2.2.0"
 cfxMX.verbose = false 
 --[[--
  Mission data decoder. Access to ME-built mission structures
@@ -12,12 +12,19 @@ cfxMX.verbose = false
    2.0.0 - clean-up 
          - harmonized with cfxGroups 
    2.0.1 - groupHotByName
-   
+   2.0.2 - partOfGroupDataInZone(), allGroupsInZoneByData() from milHelo
+   2.0.3 - allGroupsInZoneByData supports type filtering 
+   2.1.0 - support for dynamically spawning player unit detection 
+		 - new isDynamicPlayer()
+		 - new isMEPlayer() 
+		 - new isMEPlayerGroup()
+   2.2.0 - new groupCatByName[]
    
 --]]--
 cfxMX.groupNamesByID = {}
 cfxMX.groupIDbyName = {}
 cfxMX.unitIDbyName = {}
+cfxMX.groupCatByName = {}
 cfxMX.groupDataByName = {}
 cfxMX.groupTypeByName = {} -- category of group: "helicopter", "plane", "ship"...
 cfxMX.groupCoalitionByName = {}
@@ -37,16 +44,14 @@ cfxMX.playerUnit2Group = {} -- returns a group data for player units.
 
 cfxMX.groups = {} -- all groups indexed b yname, cfxGroups folded into cfxMX 
 --[[-- group objects are 
-	{
-		name= "", 
-		coalition = "" (red, blue, neutral), 
-		coanum = # (0, 1, 2 for neutral, red, blue)
-		category = "" (helicopter, ship, plane, vehicle, static),
-		hasPlayer = true/false,
-		playerUnits = {} (for each player unit in group: name, point, action)
-		
-	}
-	
+{
+	name= "", 
+	coalition = "" (red, blue, neutral), 
+	coanum = # (0, 1, 2 for neutral, red, blue)
+	category = "" (helicopter, ship, plane, vehicle, static),
+	hasPlayer = true/false,
+	playerUnits = {} (for each player unit in group: name, point, action)
+}
 --]]--
 function cfxMX.getGroupFromDCSbyName(aName, fetchOriginal)
 	if not fetchOriginal then fetchOriginal = false end 
@@ -223,7 +228,6 @@ function cfxMX.createCrossReferences()
 											category = "train" 
 											obj_type_name = "train"
 										end 
-										
 										cfxMX.groupTypeByName[aName] = category
 										cfxMX.groupNamesByID[aID] = aName
 										cfxMX.groupIDbyName[aName] = aID
@@ -234,16 +238,22 @@ function cfxMX.createCrossReferences()
 										-- now make the type-specific xrefs
 										if obj_type_name == "helicopter" then 
 											cfxMX.allHeloByName[aName] = group_data 
+											cfxMX.groupCatByName[aName] = 1
 										elseif obj_type_name == "ship" then 
 											cfxMX.allSeaByName[aName] = group_data
+											cfxMX.groupCatByName[aName] = 3
 										elseif obj_type_name == "plane" then 
 											cfxMX.allFixedByName[aName] = group_data
+											cfxMX.groupCatByName[aName] = 0
 										elseif obj_type_name == "vehicle" then 
 											cfxMX.allGroundByName[aName] = group_data
+											cfxMX.groupCatByName[aName] = 2
 										elseif obj_type_name == "static" then 
 											cfxMX.allStaticByName[aName] = group_data
+--											cfxMX.groupCatByName[aName] = -1 -- not covered
 										elseif obj_type_name == "train" then 
 											cfxMX.allTrainsByName[aName] = group_data
+											cfxMX.groupCatByName[aName] = 4
 										else 
 											-- should be impossible, but still
 											trigger.action.outText("+++MX: <" .. obj_type_name .. "> unknown type for <" .. aName .. ">", 30)
@@ -343,7 +353,71 @@ function cfxMX.catText2ID(inText)
 
 	return outCat
 end
- 
+
+function cfxMX.partOfGroupDataInZone(theZone, theUnits) -- move to mx?
+	--local zP --= cfxZones.getPoint(theZone)
+	local zP = theZone:getDCSOrigin() -- don't use getPoint now.
+	zP.y = 0
+	
+	for idx, aUnit in pairs(theUnits) do 
+		local uP = {}
+		uP.x = aUnit.x 
+		uP.y = 0
+		uP.z = aUnit.y -- !! y-z
+		if theZone:pointInZone(uP) then return true end 
+	end 
+	return false 
+end
+
+function cfxMX.allGroupsInZoneByData(theZone, cat) -- returns groups indexed by name and count 
+	if not cat then cat = {"helicopter", "ship", "plane", "vehicle" } end 
+	if type(cat) == "string" then cat = {cat} end 
+	local theGroupsInZone = {}
+	local count = 0
+	for groupName, groupData in pairs(cfxMX.groupDataByName) do 
+		local gType = cfxMX.groupTypeByName[groupName]
+		if dcsCommon.arrayContainsString(cat, gType) and groupData.units then 
+			if cfxMX.partOfGroupDataInZone(theZone, groupData.units) then 
+				theGroupsInZone[groupName] = groupData -- DATA! work on clones!
+				count = count + 1 
+				if theZone.verbose then 
+					trigger.action.outText("+++cfxMX: added group <" .. groupName .. "> for zone <" .. theZone.name .. ">", 30)
+				end 
+			end
+		end
+	end
+	return theGroupsInZone, count 
+end
+
+function cfxMX.isDynamicPlayer(theUnit)
+	if not theUnit then return false end 
+	if not theUnit.getName then return false end 
+	if not theUnit.getPlayerName then return false end 
+	if not theUnit:getPlayerName() then return false end 
+	local uName = theUnit:getName()
+	if cfxMX.playerUnitByName[uName] then return false end 
+	return true 
+end
+
+function cfxMX.isMEPlayer(theUnit) 
+	if not theUnit then return false end 
+	if not theUnit.getName then return false end 
+	if not theUnit.getPlayerName then return false end 
+	if not theUnit:getPlayerName() then return false end 
+	local uName = theUnit:getName()
+	if cfxMX.playerUnitByName[uName] then return true end 
+	return false 
+end
+
+function cfxMX.isMEPlayerGroup(theUnit) 
+	if not theUnit then return false end 
+	if not theUnit.getName then return end 
+	if not theUnit.getPlayerName then return end 
+	local uName = theUnit:getName()
+	if cfxMX.playerUnitByName[uName] then return true end 
+	return false 
+end
+
 function cfxMX.start()
 	cfxMX.createCrossReferences()
 	if cfxMX.verbose then 

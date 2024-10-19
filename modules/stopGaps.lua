@@ -1,9 +1,10 @@
 stopGap = {}
-stopGap.version = "1.1.1"
+stopGap.version = "1.3.0"
 stopGap.verbose = false 
 stopGap.ssbEnabled = true  
 stopGap.ignoreMe = "-sg"
 stopGap.spIgnore = "-sp" -- only single-player ignored 
+stopGap.noParking = false -- turn on to ignore all 'from parking' 
 stopGap.isMP = false 
 stopGap.running = true 
 stopGap.refreshInterval = -1 -- seconds to refresh all statics. -1 = never, 3600 = once every hour 
@@ -15,7 +16,7 @@ stopGap.requiredLibs = {
 	"cfxMX",
 }
 --[[--
-	Written and (c) 2023 by Christian Franz 
+	Written and (c) 2023-2024 by Christian Franz 
 
 	Replace all player units with static aircraft until the first time 
 	that a player slots into that plane. Static is then replaced with live player unit. 
@@ -51,6 +52,12 @@ stopGap.requiredLibs = {
 	1.0.10 - some more verbosity for spIgnore and sgIgnore zones (DML only)
 	1.1.0 - kickTheDead option 
 	1.1.1 - filter "from runway" clients 
+	1.1.2 - allNeutral (DML only) 
+	1.2.0 - DCS dynamic player spawn compatibility 
+			stopGaps only works with MX data, so we are good, no changes 
+			required 
+	1.3.0 - carriers in shallow waters also no longer handled as viable 
+		  - noParking option 
 	
 --]]--
 
@@ -76,6 +83,12 @@ function stopGap.staticMXFromUnitMX(theGroup, theUnit)
 	theStatic.type = theUnit.type 
 	theStatic.name = theUnit.name  -- will magically be replaced with player unit 
 	theStatic.cty = cfxMX.countryByName[theGroup.name]
+	theStatic.payload = theUnit.payload -- not supported (yet) by DCS 
+	theStatic.onboard_num = theUnit.onboard_num -- not supported 
+	-- DML only: allNeutral 
+	if stopGap.allNeutral then 
+		theStatic.cty = dcsCommon.getACountryForCoalition(0)
+	end
 	return theStatic 
 end
 
@@ -92,11 +105,26 @@ function stopGap.isGroundStart(theGroup)
 	if action == "Turning Point" then return false end 	
 	if action == "Landing" then return false end 	
 	if action == "From Runway" then return false end 
+	if stopGap.noParking then
+		local loAct = string.lower(action)
+		if loAct == "from parking area" or 
+		   loAct == "from parking area hot" then 
+			if stopGap.verbose then 
+				trigger.action.outText("StopG: Player Group <" .. theGroup.name .. "> NOPARKING: [" .. action .. "] must be skipped.", 30)
+			end 
+			return false 
+		end
+	end
 	-- looks like aircraft is on the ground
 	-- but is it in water (carrier)? 
 	local u1 = theGroup.units[1]
 	local sType = land.getSurfaceType(u1) -- has fields x and y
-	if sType == 3 then return false	end 
+	if sType == 3 or sType == 2 then 
+		if stopGap.verbose then 
+			trigger.action.outText("StopG: Player Group <" .. theGroup.name .. "> SEA BASED: [" .. action .. "], land type " .. sType .. " should be skipped.", 30)
+		end
+		return false 
+	end -- water & shallow water a no-go
 	if stopGap.verbose then 
 		trigger.action.outText("StopG: Player Group <" .. theGroup.name .. "> GROUND BASED: " .. action .. ", land type " .. sType, 30)
 	end 
@@ -412,6 +440,7 @@ function stopGap.readConfigZone(theZone)
 	stopGap.verbose = theZone.verbose 
 	stopGap.ssbEnabled = theZone:getBoolFromZoneProperty("ssb", true)
 	stopGap.enabled = theZone:getBoolFromZoneProperty("onStart", true)
+	stopGap.noParking = theZone:getBoolFromZoneProperty("noParking", false)
 	if theZone:hasProperty("on?") then 
 		stopGap.turnOnFlag = theZone:getStringFromZoneProperty("on?", "*<none>")
 		stopGap.lastTurnOnFlag = trigger.misc.getUserFlag(stopGap.turnOnFlag)
@@ -432,6 +461,7 @@ function stopGap.readConfigZone(theZone)
 	
 	stopGap.refreshInterval = theZone:getNumberFromZoneProperty("refresh", -1) -- default: no refresh
 	stopGap.kickTheDead = theZone:getBoolFromZoneProperty("kickDead", true)
+	stopGap.allNeutral = theZone:getBoolFromZoneProperty("allNeutral", false)
 end
 
 --
@@ -493,3 +523,4 @@ if not stopGap.start() then
 	trigger.action.outText("+++ aborted stopGap v" .. stopGap.version .. "  -- startup failed", 30)
 	stopGap = nil 
 end
+
