@@ -1,5 +1,5 @@
 dcsCommon = {}
-dcsCommon.version = "3.1.3"
+dcsCommon.version = "3.2.0"
 --[[-- VERSION HISTORY 
 3.0.0  - removed bad bug in stringStartsWith, only relevant if caseSensitive is false 
        - point2text new intsOnly option 
@@ -31,6 +31,8 @@ dcsCommon.version = "3.1.3"
 3.1.2  - isTroopCarrier() hardening against DCS sillieness
 3.1.3  - new dcsCommon.unitIsOfLegalType() analogue to isTroopCarrier 
 	   - new DCS Patch section
+3.2.0  - Logging Functions added
+
 --]]--
 
 	-- dcsCommon is a library of common lua functions 
@@ -62,6 +64,14 @@ end
 	dcsCommon.troopCarriers = {"Mi-8MT", "UH-1H", "Mi-24P", "OH58D", "CH-47Fbl1"} -- Ka-50, Apache and Gazelle can't carry troops, the Kiowa can!
 	dcsCommon.coalitionSides = {0, 1, 2}
 	dcsCommon.maxCountry = 86 -- number of countries defined in total 
+	dcsCommon.sides = {
+		NEUTRAL = 0,
+		REDFOR = 1,
+		BLUFOR = 2
+	}
+
+	-- logging level default
+	dcsCommon.loggingLevel = 1
 	
 	-- lookup tables
 	dcsCommon.groupID2Name = {}
@@ -70,6 +80,16 @@ end
 	dcsCommon.unitID2Y = {}
 	dcsCommon.unitName2ID = {}
 	dcsCommon.unitName2Heading = {}
+
+	-- Logging Levels
+	dcsCommon.LOGLEVELS = {
+		CRITICAL = 0,
+		ERROR = 1,
+		WARNING = 2,
+		INFO = 3,
+		DEBUG = 4,
+		TRACE = 5
+	}
 
 	-- verify that a module is loaded. obviously not required
 	-- for dcsCommon, but all higher-order modules
@@ -82,6 +102,45 @@ end
 			end
 		end
 		return canRun
+	end
+
+	-- future proofing so that single log function path allows for DCS direct or lua lfs logging
+	function dcsCommon.emitLog(level, msg)
+		-- Are we logging?
+		if dcsCommon.loggingLevel >= level then
+			if level == dcsCommon.LOGLEVELS.CRITICAL or level == dcsCommon.LOGLEVELS.ERROR then
+				env.error(msg)
+			elseif level == dcsCommon.LOGLEVELS.WARNING then
+				env.warning(msg)
+			else
+				env.info(msg)
+			end
+
+		end
+	end
+
+	function dcsCommon.logCRITICAL(msg)
+		dcsCommon.emitLog(dcsCommon.LOGLEVELS.CRITICAL, msg)
+	end
+
+	function dcsCommon.logERROR(msg)
+		dcsCommon.emitLog(dcsCommon.LOGLEVELS.ERROR, msg)
+	end
+
+	function dcsCommon.logWARNING(msg)
+		dcsCommon.emitLog(dcsCommon.LOGLEVELS.WARNING, msg)
+	end
+
+	function dcsCommon.logINFO(msg)
+		dcsCommon.emitLog(dcsCommon.LOGLEVELS.INFO, msg)
+	end
+
+	function dcsCommon.logDEBUG(msg)
+		dcsCommon.emitLog(dcsCommon.LOGLEVELS.DEBUG, "**DEBUG** " .. msg)
+	end
+
+	function dcsCommon.logTRACE(msg)
+		dcsCommon.emitLog(dcsCommon.LOGLEVELS.TRACE, "**TRACE** " .. msg)
 	end
 
 	-- read all groups and units from miz and build a reference table
@@ -185,9 +244,12 @@ end
 			delay = delay + delayMin 
 			if delay > delayMax then delay = delayMax end 
 			if delay < 1 then delay = 1 end 
-		
+	
+
+			msg = "+++dcsC: delay range " .. delayMin .. "-" .. delayMax .. ": selected " .. delay
+			dcsCommon.logINFO(msg)
 			if dcsCommon.verbose then 
-				trigger.action.outText("+++dcsC: delay range " .. delayMin .. "-" .. delayMax .. ": selected " .. delay, 30)
+				trigger.action.outText(msg, 30)
 			end
 		end
 		
@@ -204,7 +266,9 @@ end
 		theNum = math.floor(theNum)
 		if theNum >= 50 then return math.random(theNum) end
 		if theNum < 1 then
-			trigger.action.outText("smallRandom: invoke with argument < 1 (" .. theNum .. "), using 1", 30)
+			msg = "smallRandom: invoke with argument < 1 (" .. theNum .. "), using 1"
+			dcsCommon.logINFO(msg)
+			trigger.action.outText(msg, 30)
 			theNum = 1 
 		end 
 		-- for small randoms (<50) 
@@ -261,11 +325,15 @@ end
 
 	function dcsCommon.pickRandom(theTable)
 		if not theTable then 
-			trigger.action.outText("*** warning: nil table in pick random", 30)
+			msg = "*** warning: nil table in pick random"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 		end
 		
-		if #theTable < 1 then 
-			trigger.action.outText("*** warning: zero choice in pick random", 30)
+		if #theTable < 1 then
+			msg = "*** warning: zero choice in pick random"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			--local k = i.ll 
 			return nil
 		end
@@ -472,7 +540,9 @@ end
 		if not ignore then ignore = {} end 
 		if not cat then return nil end 
 		if (not cat == "helicopter") and (not cat == "plane") then 
-			trigger.action.outText("+++common-getslotforcat: wrong cat <" .. cat .. ">", 30)
+			msg = "+++common-getslotforcat: wrong cat <" .. cat .. ">"
+			dcsCommon.logINFO(msg)
+			trigger.action.outText(msg, 30)
 			return nil 
 		end
 		local allFree = theAirbase:getParking(true) --  only free slots
@@ -605,12 +675,16 @@ end
 	function dcsCommon.dist(point1, point2)	 -- returns distance between two points
 	  -- supports xyz and xy notations
 	  if not point1 then 
-		trigger.action.outText("+++ warning: nil point1 in common:dist", 30)
+		msg = "+++ warning: nil point1 in common:dist"
+		dcsCommon.logWARNING(msg)
+		trigger.action.outText(msg, 30)
 		point1 = {x=0, y=0, z=0}
 	  end
 
-	  if not point2 then 
-		trigger.action.outText("+++ warning: nil point2 in common:dist", 30)
+	  if not point2 then
+		msg = "+++ warning: nil point2 in common:dist"
+		dcsCommon.logWARNING(msg)
+		trigger.action.outText(msg, 30)
 		point2 = {x=0, y=0, z=0}
 		stop.here.now = 1
 	  end
@@ -656,27 +730,39 @@ end
 
 	function dcsCommon.bearingFromAtoB(A, B) -- coords in x, z 
 		if not A then 
-			trigger.action.outText("WARNING: no 'A' in bearingFromAtoB", 30)
+			msg = "WARNING: no 'A' in bearingFromAtoB"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not B then
-			trigger.action.outText("WARNING: no 'B' in bearingFromAtoB", 30)
+			msg = "WARNING: no 'B' in bearingFromAtoB"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not A.x then 
-			trigger.action.outText("WARNING: no 'A.x' (type A =<" .. type(A) .. ">)in bearingFromAtoB", 30)
+			msg = "WARNING: no 'A.x' (type A =<" .. type(A) .. ">)in bearingFromAtoB"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not A.z then 
-			trigger.action.outText("WARNING: no 'A.z' (type A =<" .. type(A) .. ">)in bearingFromAtoB", 30)
+			msg = "WARNING: no 'A.z' (type A =<" .. type(A) .. ">)in bearingFromAtoB"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not B.x then 
-			trigger.action.outText("WARNING: no 'B.x' (type B =<" .. type(B) .. ">)in bearingFromAtoB", 30)
+			msg = "WARNING: no 'B.x' (type B =<" .. type(B) .. ">)in bearingFromAtoB"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not B.z then 
-			trigger.action.outText("WARNING: no 'B.z' (type B =<" .. type(B) .. ">)in bearingFromAtoB", 30)
+			msg = "WARNING: no 'B.z' (type B =<" .. type(B) .. ">)in bearingFromAtoB"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		
@@ -688,27 +774,39 @@ end
 
 	function dcsCommon.bearingFromAtoBusingXY(A, B) -- coords in x, y 
 		if not A then 
-			trigger.action.outText("WARNING: no 'A' in bearingFromAtoBXY", 30)
+			msg = "WARNING: no 'A' in bearingFromAtoBXY"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not B then
-			trigger.action.outText("WARNING: no 'B' in bearingFromAtoBXY", 30)
+			msg = "WARNING: no 'B' in bearingFromAtoBXY"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not A.x then 
-			trigger.action.outText("WARNING: no 'A.x' (type A =<" .. type(A) .. ">)in bearingFromAtoBXY", 30)
+			msg = "WARNING: no 'A.x' (type A =<" .. type(A) .. ">)in bearingFromAtoBXY"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not A.y then 
-			trigger.action.outText("WARNING: no 'A.y' (type A =<" .. type(A) .. ">)in bearingFromAtoBXY", 30)
+			msg = "WARNING: no 'A.y' (type A =<" .. type(A) .. ">)in bearingFromAtoBXY"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not B.x then 
-			trigger.action.outText("WARNING: no 'B.x' (type B =<" .. type(B) .. ">)in bearingFromAtoBXY", 30)
+			msg = "WARNING: no 'B.x' (type B =<" .. type(B) .. ">)in bearingFromAtoBXY"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		if not B.y then 
-			trigger.action.outText("WARNING: no 'B.y' (type B =<" .. type(B) .. ">)in bearingFromAtoBXY", 30)
+			msg = "WARNING: no 'B.y' (type B =<" .. type(B) .. ">)in bearingFromAtoBXY"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 0
 		end
 		
@@ -953,9 +1051,11 @@ end
 		
 		-- get all units
 		local allUnits = group:getUnits()
-		if not allUnits then 
+		if not allUnits then
+			msg = "++++common: no group location for <" .. gName .. ">, skipping."
+			dcsCommon.logINFO(msg)
 			if verbose then 
-				trigger.action.outText("++++common: no group location for <" .. gName .. ">, skipping.", 30)
+				trigger.action.outText(msg, 30)
 			end
 			return nil 
 		end 
@@ -1031,12 +1131,16 @@ end
 	end
 
 	function dcsCommon.getGroupTypeString(group) -- convert into comma separated types 
-		if not group then 
-			trigger.action.outText("+++cmn getGroupTypeString: nil group", 30)
+		if not group then
+			msg = "+++cmn getGroupTypeString - " .. group .. ": nil group"
+			dcsCommon.logINFO(msg)
+			trigger.action.outText(msg, 30)
 			return "" 
 		end
 		if not dcsCommon.isGroupAlive(group) then 
-			trigger.action.outText("+++cmn getGroupTypeString: dead group", 30)
+			msg = "+++cmn getGroupTypeString" .. group .. ": dead group"
+			dcsCommon.logINFO(msg)
+			trigger.action.outText(msg, 30)
 			return "" 
 		end 
 		local theTypes = ""
@@ -1050,11 +1154,15 @@ end
 
 	function dcsCommon.getGroupTypes(group) 
 		if not group then 
-			trigger.action.outText("+++cmn getGroupTypes: nil group", 30)
+			msg = "+++cmn getGroupTypes - " .. group ..": nil group"
+			dcsCommon.logINFO(msg)
+			trigger.action.outText(msg, 30)
 			return {}
 		end
 		if not dcsCommon.isGroupAlive(group) then 
-			trigger.action.outText("+++cmn getGroupTypes: dead group", 30)
+			msg = "+++cmn getGroupTypes - " .. group .. ": dead group"
+			dcsCommon.logINFO(msg)
+			trigger.action.outText(msg, 30)
 			return {}
 		end 
 		local liveUnits = dcsCommon.getLiveGroupUnits(group)
@@ -1145,16 +1253,20 @@ end
 	function dcsCommon.preCall(e)
 		-- we can filter here
 		-- if we return false, the call is abortet
+		msg = "event " .. e.id .. " received: PRE-PROCESSING"
+		dcsCommon.logINFO(msg)
 		if dcsCommon.verbose then
-			trigger.action.outText("event " .. e.id .. " received: PRE-PROCESSING", 10)
+			trigger.action.outText(msg, 10)
 		end
 		return true;
 	end;
 
 	function dcsCommon.postCall(e)
 		-- we do pos proccing here 
+		msg = "event " .. e.id .. " received: post proc"
+		dcsCommon.logINFO(msg)
 		if dcsCommon.verbose then
-			trigger.action.outText("event " .. e.id .. " received: post proc", 10)
+			trigger.action.outText(msg, 10)
 		end
 	end
 	
@@ -1182,8 +1294,10 @@ end
 				end;
 			end;
 			if not hasMatch then 
+				msg = "event " .. e.id .. " discarded - not in whitelist evTypes"
+				dcsCommon.logINFO(msg)
 				if dcsCommon.verbose then
-					trigger.action.outText("event " .. e.id .. " discarded - not in whitelist evTypes", 10)
+					trigger.action.outText(msg, 10)
 				end
 				if (self.rejected) then self.rejected(event) end 
 				return;
@@ -1430,7 +1544,9 @@ end
 		end
 			
 		if not freeParkingSlot then 
-			trigger.action.outText("civA: no free parking at " .. aerodrome:getName(), 30)
+			msg = "civA: no free parking at " .. aerodrome:getName()
+			dcsCommon.logINFO(msg)
+			trigger.action.outText(msg, 30)
 			return nil 
 		end
 			
@@ -1608,6 +1724,7 @@ end
 		local theNewGroup = dcsCommon.createEmptyGroundGroupData(name)
 		local aUnit = {}
 		aUnit = dcsCommon.createGroundUnitData(name .. "-1", theUnitType, false)
+		dcsCommon.logDEBUG("dcsCommon - unit name retval " .. aUnit.name)
 --		trigger.action.outText("dcsCommon - unit name retval " .. aUnit.name, 30)
 		dcsCommon.addUnitToGroupData(aUnit, theNewGroup, x, z, heading)
 		return theNewGroup
@@ -1695,10 +1812,12 @@ end
 					thePoint = dcsCommon.randomPointInCircle(radius, innerRadius) -- returns x, 0, z
 					-- check if too close to others
 					for idx, rUnit in pairs(processedUnits) do -- get min dist to all positioned units
+						dcsCommon.logDEBUG("rPnt: thePoint =  " .. dcsCommon.point2text(thePoint))
 						--trigger.action.outText("rPnt: thePoint =  " .. dcsCommon.point2text(thePoint), 30)
 						uPoint.x = rUnit.x
 						uPoint.y = 0
 						uPoint.z = rUnit.y 
+						dcsCommon.logDEBUG("rPnt: uPoint =  " .. dcsCommon.point2text(uPoint))
 						--trigger.action.outText("rPnt: uPoint =  " .. dcsCommon.point2text(uPoint), 30)
 						local dist = dcsCommon.dist(thePoint, uPoint) -- measure distance to unit
 						if (dist < lowDist) then lowDist = dist end
@@ -1753,7 +1872,9 @@ end
 			local w = 2
 			dcsCommon.arrangeGroupInNColumns(theNewGroup, w, radius)
 		else 
-			trigger.action.outText("dcsCommon - unknown formation: " .. formation, 30)
+			msg = "dcsCommon - unknown formation: " .. formation
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 		end
 	
 	end
@@ -1854,6 +1975,7 @@ end
 		-- now loop and create a unit for each table
 		local num = 1
 		for key, theType in pairs(theUnitTypes) do 
+			dcsCommon.logDEBUG("+++dcsC: creating unit " .. name .. "-" .. num .. ": " .. theType)
 			-- trigger.action.outText("+++dcsC: creating unit " .. name .. "-" .. num .. ": " .. theType, 30)
 			local aUnit = dcsCommon.createGroundUnitData(name .. "-"..num, theType, false)
 			local theLivery = liveries[theType]
@@ -1887,7 +2009,9 @@ end
 		elseif cat == Group.Category.GROUND then
 			theNewGroup = dcsCommon.createEmptyGroudGroupData(newName)
 		else 
-			trigger.action.outText("dcsCommon - unknown category: " .. cat, 30)
+			msg = "dcsCommon - unknown category: " .. cat
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return nil
 		end
 		
@@ -2178,7 +2302,9 @@ end
 		if not theString then return false end
 		if not caseSensitive then caseSensitive = false end 
 		if type(theArray) ~= "table" then 
-			trigger.action.outText("***wildArrayContainsString: theArray is not type table but <" .. type(theArray) .. ">", 30)
+			msg = "***wildArrayContainsString: theArray is not type table but <" .. type(theArray) .. ">"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 		end
 		if not caseSensitive then theString = string.upper(theString) end 
 		
@@ -2214,7 +2340,9 @@ end
 		if not theArray then return false end
 		if not theString then return false end
 		if type(theArray) ~= "table" then 
-			trigger.action.outText("***arrayContainsString: theArray is not type <table> but <" .. type(theArray) .. ">", 30)
+			msg = "***arrayContainsString: theArray is not type <table> but <" .. type(theArray) .. ">"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 		end
 		for idx, item in pairs(theArray) do 
 --		for i = 1, #theArray do 
@@ -2227,7 +2355,9 @@ end
 		if not theArray then return false end
 		if not theString then return false end
 		if type(theArray) ~= "table" then 
-			trigger.action.outText("***arrayContainsStringCI: theArray is not type <table> but <" .. type(theArray) .. ">", 30)
+			msg = "***arrayContainsStringCI: theArray is not type <table> but <" .. type(theArray) .. ">"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 		end
 		theString = string.upper(theString)
 		for idx, item in pairs(theArray) do 
@@ -2491,6 +2621,7 @@ end
 	function dcsCommon.dumpVar(key, value, prefix, inrecursion)
 		if not inrecursion then 
 			-- output a marker to find in the log / screen
+			dcsCommon.logDEBUG("Starting dcsCommon dumpVar()")
 			env.info("*** dcsCommon vardump START")
 		end
 		if not value then value = "nil" end
@@ -2517,6 +2648,7 @@ end
 			-- output a marker to find in the log / screen
 			trigger.action.outText("=== dcsCommon vardump end", 30)
 			env.info("=== dcsCommon vardump end")
+			dcsCommon.logDEBUG("Completed dcsCommon dumpVar()")
 		end
 	end
 	
@@ -2524,6 +2656,7 @@ end
 		-- dumps to screen, not string 
 		if not inrecursion then 
 			-- output a marker to find in the log / screen
+			dcsCommon.logDEBUG("Starting dcsCommon dumpVar25tr()")
 			trigger.action.outText("*** dcsCommon vardump START",30)
 		end
 		if not value then value = "nil" end
@@ -2555,6 +2688,7 @@ end
 		if not inrecursion then 
 			-- output a marker to find in the log / screen
 			trigger.action.outText("=== dcsCommon vardump end", 30)
+			dcsCommon.logDEBUG("Completed dcsCommon dumpVar25tr()")
 		end
 	end
 		
@@ -3035,8 +3169,10 @@ function dcsCommon.coalition2county(inCoalition)
 			if inCoalition == "red" then return 81 end
 			if inCoalition == "blue" then return 80 end
 	end
-		
-	trigger.action.outText("+++dcsC: coalition2county in (" .. inCoalition .. ") converts to UN (82)!", 30)
+	
+	msg = "+++dcsC: coalition2county in (" .. inCoalition .. ") converts to UN (82)!"
+	dcsCommon.logINFO(msg)
+	trigger.action.outText(msg, 30)
 	return 82 -- UN 
 	
 end
@@ -3102,7 +3238,9 @@ end
 function dcsCommon.numberArrayFromString(inString, default) -- moved from cfxZones
 	if not default then default = 0 end 
 	if string.len(inString) < 1 then 
-		trigger.action.outText("+++dcsCommon: empty numbers", 30)
+		msg = "+++dcsCommon: empty numbers"
+		dcsCommon.logWARNING(msg)
+		trigger.action.outText(msg, 30)
 		return {default, } 
 	end
 	
@@ -3131,7 +3269,9 @@ function dcsCommon.numberArrayFromString(inString, default) -- moved from cfxZon
 				end
 			else
 				-- bounds illegal
-				trigger.action.outText("+++dcsCommon: ignored range <" .. anElement .. "> (range)", 30)
+				msg = "+++dcsCommon: ignored range <" .. anElement .. "> (range)"
+				dcsCommon.logWARNING(msg)
+				trigger.action.outText(msg, 30)
 			end
 		else
 			-- single number
@@ -3148,13 +3288,17 @@ end
 
 function dcsCommon.flagArrayFromString(inString, verbose)
 	if not verbose then verbose = false end 
-	
+
+	msg = "+++flagArray: processing <" .. inString .. ">"
+	dcsCommon.logINFO(msg)
 	if verbose then 
-		trigger.action.outText("+++flagArray: processing <" .. inString .. ">", 30)
+		trigger.action.outText(msg, 30)
 	end 
 
 	if string.len(inString) < 1 then 
-		trigger.action.outText("+++flagArray: empty flags", 30)
+		msg = "+++flagArray: empty flags"
+		dcsCommon.logINFO(msg)
+		trigger.action.outText(msg, 30)
 		return {} 
 	end
 	
@@ -3185,7 +3329,9 @@ function dcsCommon.flagArrayFromString(inString, verbose)
 				end
 			else
 				-- bounds illegal
-				trigger.action.outText("+++flagArray: ignored range <" .. anElement .. "> (range)", 30)
+				msg = "+++flagArray: ignored range <" .. anElement .. "> (range)"
+				dcsCommon.logWARNING(msg)
+				trigger.action.outText(msg, 30)
 			end
 		else
 			-- single number
@@ -3194,25 +3340,34 @@ function dcsCommon.flagArrayFromString(inString, verbose)
 				table.insert(flags, f)
 
 			else 
-				trigger.action.outText("+++flagArray: ignored element <" .. anElement .. "> (single)", 30)
+				msg = "+++flagArray: ignored element <" .. anElement .. "> (single)"
+				dcsCommon.logWARNING(msg)
+				trigger.action.outText(msg, 30)
 			end
 		end
 	end
+	
+	msg = "+++flagArray: <" .. #flags .. "> flags total"
+	dcsCommon.logINFO(msg)
 	if verbose then 
-		trigger.action.outText("+++flagArray: <" .. #flags .. "> flags total", 30)
+		trigger.action.outText(msg, 30)
 	end 
 	return flags
 end
 
 function dcsCommon.rangeArrayFromString(inString, verbose)
 	if not verbose then verbose = false end 
-	
+
+	msg = "+++rangeArray: processing <" .. inString .. ">"
+	dcsCommon.logINFO(msg)
 	if verbose then 
-		trigger.action.outText("+++rangeArray: processing <" .. inString .. ">", 30)
+		trigger.action.outText(msg, 30)
 	end 
 
 	if string.len(inString) < 1 then 
-		trigger.action.outText("+++rangeArray: empty ranges", 30)
+		msg = "+++rangeArray: empty ranges"
+		dcsCommon.logINFO(msg)
+		trigger.action.outText(msg, 30)
 		return {} 
 	end
 	
@@ -3240,12 +3395,17 @@ function dcsCommon.rangeArrayFromString(inString, verbose)
 				outRange[1] = lowerBound
 				outRange[2] = upperBound
 				table.insert(ranges, outRange)
+
+				msg = "+++rangeArray: new range <" .. lowerBound .. "> to <" .. upperBound .. ">"
+				dcsCommon.logINFO(msg)
 				if verbose then 
-					trigger.action.outText("+++rangeArray: new range <" .. lowerBound .. "> to <" .. upperBound .. ">", 30)
+					trigger.action.outText(msg, 30)
 				end
 			else
 				-- bounds illegal
-				trigger.action.outText("+++rangeArray: ignored range <" .. anElement .. "> (range)", 30)
+				msg = "+++rangeArray: ignored range <" .. anElement .. "> (range)"
+				dcsCommon.logWARNING(msg)
+				trigger.action.outText(msg, 30)
 			end
 		else
 			-- single number
@@ -3255,16 +3415,24 @@ function dcsCommon.rangeArrayFromString(inString, verbose)
 				outRange[1] = f
 				outRange[2] = f
 				table.insert(ranges, outRange)
+
+				msg = "+++rangeArray: new (single-val) range <" .. f .. "> to <" .. f .. ">"
+				dcsCommon.logINFO(msg)
 				if verbose then 
-					trigger.action.outText("+++rangeArray: new (single-val) range <" .. f .. "> to <" .. f .. ">", 30)
+					trigger.action.outText(msg, 30)
 				end
 			else 
-				trigger.action.outText("+++rangeArray: ignored element <" .. anElement .. "> (single)", 30)
+				msg = "+++rangeArray: ignored element <" .. anElement .. "> (single)"
+				dcsCommon.logWARNING(msg)
+				trigger.action.outText(msg, 30)
 			end
 		end
 	end
+
+	msg = "+++rangeArray: <" .. #ranges .. "> ranges total"
+	dcsCommon.logINFO(msg)
 	if verbose then 
-		trigger.action.outText("+++rangeArray: <" .. #ranges .. "> ranges total", 30)
+		trigger.action.outText(msg, 30)
 	end 
 	return ranges
 end
@@ -3460,6 +3628,7 @@ function dcsCommon.letter(inChar)
 	else 
 		return "#ERRORT#"
 	end
+	dcsCommon.logDEBUG("doing <" .. theChar .. ">")
 --	trigger.action.outText("doing <" .. theChar .. ">", 30)
 	local a = dcsCommon.alphabet[theChar]
 	if a == nil then a = "#ERROR?#" end 
@@ -3573,7 +3742,9 @@ function dcsCommon.getMagDeclForPoint(point)
 	local map = dcsCommon.getMapName()
 	local decl = dcsCommon.magDecls[map]
 	if not decl then 
-		trigger.action.outText("+++dcsC: unknown map <" .. map .. ">, using dclenation 0", 30)
+		msg = "+++dcsC: unknown map <" .. map .. ">, using dclenation 0"
+		dcsCommon.logWARNING(msg)
+		trigger.action.outText(msg, 30)
 		decl = 0
 	end
 	return decl 
@@ -3658,8 +3829,10 @@ end
 		dcsCommon.collectMissionIDs()
 		
 		--dcsCommon.uuIdent = 0
+		msg = "dcsCommon v" .. dcsCommon.version .. " loaded"
+		dcsCommon.logINFO(msg)
 		if (dcsCommon.verbose) or true then
-		  trigger.action.outText("dcsCommon v" .. dcsCommon.version .. " loaded", 10)
+		  trigger.action.outText(msg, 10)
 		end
 	end
 

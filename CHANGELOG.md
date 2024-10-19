@@ -2,6 +2,37 @@
 CHANGELOG
 =========
 
+2.4.0 (Logging Upgrades - zeathe)
+---------------------------------
+
+Implements CSOFranz DML v2.2.4b
+
+### Added
+
+* dcsCommon.logEmit() and dcsCommon.logXXXXX() functions for logging
+* Trace-level logging output:
+   * dcsCommon.lua
+
+### Changed
+
+* Rolling upgrade of all trigger.action.outText() calls to also leverage
+  dcsCommon.logXXXXX() functions:
+   * dcsCommon.lua
+   * ownedZones.lua
+* 
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+* ownedZones.lua redLost/blueLost flag handling on neutral cap
+
+### Security
+
+
+
 2.3.0 ( - zeathe)
 -----------------
 

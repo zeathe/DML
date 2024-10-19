@@ -1,5 +1,5 @@
 cfxZones = {}
-cfxZones.version = "4.4.2" 
+cfxZones.version = "4.5.0" 
 
 -- cf/x zone management module
 -- reads dcs zones and makes them accessible and mutable 
@@ -30,8 +30,10 @@ cfxZones.version = "4.4.2"
 		  - dmlZone:getTypeName()
 		  - dmlZone supports masterOwner by default 
 		  - dmlZone:getCoalition() dereferences masterOwner once 
--4.4.1	  - better verbosity for error in doPollFlag()
--4.4.2    - twn support for wildcards <twn: > and <loc:>
+- 4.4.1	  - better verbosity for error in doPollFlag()
+- 4.4.2   - twn support for wildcards <twn: > and <loc:>
+- 4.5.0   - dcsCommon.logXXXXX implementation
+
 --]]--
 
 --
@@ -1517,7 +1519,7 @@ function cfxZones.doPollFlag(theFlag, method, theZone) -- no OOP equivalent
 		method = "#" .. method -- convert to immediate 
 		mt = "string"
 	elseif mt ~= "string" then 
-		trigger.action.outText("+++zne: warning: zone <" .. theZone.name .. "> method type <" .. mt .. "> received. Ignoring", 30)
+		trigger.action.outText("+++zones: warning: zone <" .. theZone.name .. "> method type <" .. mt .. "> received. Ignoring", 30)
 		return 
 	end
 
@@ -1738,7 +1740,9 @@ function cfxZones.getFlagValue(theFlag, theZone)
 	
 	-- some QoL: detect "<none>"
 	if dcsCommon.containsString(theFlag, "<none>") then 
-		trigger.action.outText("+++Zone: warning - getFlag has '<none>' flag name in zone <" .. zoneName .. ">", 30) -- break here
+		msg = "+++Zone: warning - getFlag for flag <" ..theFlag.. "> has '<none>' flag name in zone <" .. zoneName .. ">"
+		dcsCommon.logWARNING(msg)
+		trigger.action.outText(msg, 30) -- break here
 	end
 	
 	-- now do wildcard processing. we have alphanumeric
