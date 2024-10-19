@@ -1,5 +1,5 @@
 sequencer = {}
-sequencer.version = "2.0.0"
+sequencer.version = "2.1.0"
 sequencer.verbose = false 
 sequencer.requiredLibs = {
 	"dcsCommon", -- always
@@ -13,16 +13,19 @@ sequencer.requiredLibs = {
 Version History
 	1.0.0 - initial version 
 	2.0.0 - dmlZones 
+	2.1.0 - dcsCommon.logXXXXX implementation
 --]]--
 
 sequencer.sequencers = {}
 
 function sequencer.addSequencer(theZone)
+	dcsCommon.logTRACE("+++seq: **TRACE** started addSequencer()")
 	if not theZone then return end 
 	table.insert(sequencer.sequencers, theZone)
 end
 
 function sequencer.getSequenceByName(aName) 
+	dcsCommon.logTRACE("+++seq: **TRACE** started getSequencerByName()")
 	if not aName then return nil end 
 	for idx, aZone in pairs(sequencer.sequencers) do 
 		if aZone.name == aName then return aZone end 
@@ -35,6 +38,7 @@ end
 --
 
 function sequencer.createSequenceWithZone(theZone)
+	dcsCommon.logTRACE("+++seq: **TRACE** started createSequencerWithZone()")
 	local seqRaw = theZone:getStringFromZoneProperty("sequence!", "none")
 	local theFlags = dcsCommon.flagArrayFromString(seqRaw)
 	theZone.sequence = theFlags
@@ -96,26 +100,34 @@ function sequencer.createSequenceWithZone(theZone)
 	if theZone:hasProperty("seqTriggerMethod") then 
 		theZone.seqTriggerMethod = theZone:getStringFromZoneProperty("seqTriggerMethod", "change")
 	end
-	
+
+	msg = "+++seq: WARNING - sequence <" .. theZone.name .. "> cannot be started: no startSeq? and onStart is false"
+	dcsCommon.logWARNING(msg)
 	if (not theZone.onStart) and not (theZone.startSeq) then 
-		trigger.action.outText("+++seq: WARNING - sequence <" .. theZone.name .. "> cannot be started: no startSeq? and onStart is false", 30)
+		trigger.action.outText(msg, 30)
 	end
 end
 
 function sequencer.fire(theZone)
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.fire()")
 	-- time's up. poll flag at index
 	local theFlag = theZone.sequence[theZone.seqIndex]
 	if theFlag then 
 		theZone:pollFlag(theFlag, theZone.seqMethod)
+		msg = "+++seq: triggering flag <" .. theFlag .. "> for index <" .. theZone.seqIndex .. "> in sequence <" .. theZone.name .. ">"
+		dcsCommon.logINFO(msg)
 		if theZone.verbose or sequencer.verbose then 
-			trigger.action.outText("+++seq: triggering flag <" .. theFlag .. "> for index <" .. theZone.seqIndex .. "> in sequence <" .. theZone.name .. ">", 30)
+			trigger.action.outText(msg, 30)
 		end
 	else 
-		trigger.action.outText("+++seq: ran out of sequences for <" .. theZone.name .. "> on index <" .. theZone.seqIndex .. ">", 30)
+		msg = "+++seq: ran out of sequences for <" .. theZone.name .. "> on index <" .. theZone.seqIndex .. ">"
+		dcsCommon.logINFO(msg)
+		trigger.action.outText(msg, 30)
 	end
 end
 
 function sequencer.advanceInterval(theZone)
+	dcsCommon.logTRACE("+++seq: **TRACE** started advanceInterval()")
 	theZone.intervalIndex = theZone.intervalIndex + 1
 	if theZone.intervalIndex > #theZone.intervals then 
 		theZone.intervalIndex = 1 -- always loops 
@@ -123,6 +135,7 @@ function sequencer.advanceInterval(theZone)
 end
 
 function sequencer.advanceSeq(theZone)
+	dcsCommon.logTRACE("+++seq: **TRACE** started advanceSeq()")
 	-- get the next index for the sequence
 	theZone.seqIndex = theZone.seqIndex + 1
 	
@@ -139,16 +152,21 @@ function sequencer.advanceSeq(theZone)
 end
 
 function sequencer.startWaitCycle(theZone)
+	dcsCommon.logTRACE("+++seq: **TRACE** started startWaitCycle()")
 	if theZone.seqComplete then return end 
 	local bounds = theZone.intervals[theZone.intervalIndex]
 	local newInterval = dcsCommon.randomBetween(bounds[1], bounds[2])
 	theZone.timeLimit = timer.getTime() + newInterval
+
+	msg = "+++seq: start wait for <" .. newInterval .. "> in sequence <" .. theZone.name .. ">"
+	dcsCommon.logINFO(msg)
 	if theZone.verbose or sequencer.verbose then 
-		trigger.action.outText("+++seq: start wait for <" .. newInterval .. "> in sequence <" .. theZone.name .. ">", 30)
+		trigger.action.outText(msg, 30)
 	end
 end
 
 function sequencer.pause(theZone)
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.pause() on zone <" .. theZone.name .. ">")
 	if theZone.seqComplete then return end 
 	if not theZone.seqRunning then return end 
 	local now = timer.getTime()
@@ -157,6 +175,7 @@ function sequencer.pause(theZone)
 end
 
 function sequencer.continue(theZone)
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.continue() on zone <" .. theZone.name .. ">")
 	if theZone.seqComplete then return end -- Frankie says: no more 
 	if theZone.seqRunning then return end -- we are already running 
 	
@@ -187,6 +206,7 @@ function sequencer.continue(theZone)
 end
 
 function sequencer.reset(theZone)
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.reset() on zone <" .. theZone.name .. ">")
 	theZone.seqComplete = false 
 	theZone.seqRunning = false 
 	theZone.seqIndex = 1 -- we start at one 
@@ -201,6 +221,7 @@ end
 --- update 
 ---
 function sequencer.update()
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.update()")
 	-- call me in a second to poll triggers
 	local now = timer.getTime()
 	timer.scheduleFunction(sequencer.update, {}, now + 1)
@@ -215,8 +236,10 @@ function sequencer.update()
 		if (not theZone.seqRunning) and theZone.startSeq and
 		theZone:testZoneFlag(theZone.startSeq, theZone.seqTriggerMethod, "lastStartSeq") then 
 			sequencer.continue(theZone)
+			msg = "+++seq: continuing sequencer <" .. theZone.name .. ">"
+			dcsCommon.logINFO(msg)
 			if theZone.verbose or sequencer.verbose then
-				trigger.action.outText("+++seq: continuing sequencer <" .. theZone.name .. ">", 30)
+				trigger.action.outText(msg, 30)
 			end
 		else 
 			-- synch the start flag so we don't immediately trigger 
@@ -229,8 +252,10 @@ function sequencer.update()
 		if theZone.seqRunning and theZone.stopSeq and
 		theZone:testZoneFlag(theZone.stopSeq, theZone.seqTriggerMethod, "lastStopSeq") then 
 			sequencer.pause(theZone)
+			msg = "+++seq: pausing sequencer <" .. theZone.name .. ">"
+			dcsCommon.logINFO(msg)
 			if theZone.verbose or sequencer.verbose then
-				trigger.action.outText("+++seq: pausing sequencer <" .. theZone.name .. ">", 30)
+				trigger.action.outText(msg, 30)
 			end
 		else 
 			if theZone.stopSeq then 
@@ -244,8 +269,11 @@ function sequencer.update()
 			local doNext = false 
 			if theZone.nextSeq then 
 				doNext = theZone:testZoneFlag(theZone.nextSeq, theZone.seqTriggerMethod, "lastNextSeq") 
+
+				msg = "+++seq: 'next' command received for sequencer <" .. theZone.name .. "> on <" .. theZone.nextSeq .. ">"
+				dcsCommon.logINFO(msg)
 				if doNext and (sequencer.verbose or theZone.verbose) then 
-					trigger.action.outText("+++seq: 'next' command received for sequencer <" .. theZone.name .. "> on <" .. theZone.nextSeq .. ">", 30)
+					trigger.action.outText(msg, 30)
 				end
 			end 
 			
@@ -263,8 +291,10 @@ function sequencer.update()
 				else 
 					if theZone.seqDone then 
 						theZone:pollFlag(theZone.seqDone, theZone.seqMethod)
+						msg = "+++seq: banging done! flag <" .. theZone.seqDone .. "> for sequence <" .. theZone.name .. ">"
+						dcsCommon.logINFO(msg)
 						if theZone.verbose or sequencer.verbose then 
-							trigger.action.outText("+++seq: banging done! flag <" .. theZone.seqDone .. "> for sequence <" .. theZone.name .. ">", 30)
+							trigger.action.outText(msg, 30)
 						end
 					end
 					theZone.seqRunning = false 
@@ -279,15 +309,18 @@ end
 -- start cycle: force all onStart to fire 
 --
 function sequencer.startCycle()
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.startCycle()")
 	for idx, theZone in pairs(sequencer.sequencers) do
 		-- a sequence can be already running when persistence
 		-- loaded a sequencer
 		if theZone.onStart then 
 			if theZone.seqStarted then 
 				-- suppressed by persistence 
-			else 
+			else
+				msg = "+++seq: starting sequencer " .. theZone.name
+				dcsCommon.logINFO(msg)
 				if sequencer.verbose or theZone.verbose then 
-					trigger.action.outText("+++seq: starting sequencer " .. theZone.name, 30)
+					trigger.action.outText(msg, 30)
 				end 
 				sequencer.continue(theZone)
 			end 
@@ -299,6 +332,7 @@ end
 -- LOAD / SAVE 
 --
 function sequencer.saveData()
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.saveData()")
 	local theData = {}
 	local allSequencers = {}
 	local now = timer.getTime()
@@ -322,19 +356,24 @@ function sequencer.saveData()
 end
 
 function sequencer.loadData()
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.loadData()")
 	if not persistence then return end 
 	local theData = persistence.getSavedDataForModule("sequencer")
-	if not theData then 
+	if not theData then
+		msg = "+++seq Persistence: no save date received, skipping."
+		dcsCommon.logINFO(msg)
 		if sequencer.verbose then 
-			trigger.action.outText("+++seq Persistence: no save date received, skipping.", 30)
+			trigger.action.outText(msg, 30)
 		end
 		return
 	end
 	
 	local allSequencers = theData.allSequencers
 	if not allSequencers then 
+		msg = "+++seq Persistence: no sequencer data, skipping"
+		dcsCommon.logINFO(msg)
 		if sequencer.verbose then 
-			trigger.action.outText("+++seq Persistence: no sequencer data, skipping", 30)
+			trigger.action.outText(msg, 30)
 		end		
 		return
 	end
@@ -354,7 +393,9 @@ function sequencer.loadData()
 			end
 			
 		else 
-			trigger.action.outText("+++seq: persistence: cannot synch sequencer <" .. theName .. ">, skipping", 40)
+			msg = "+++seq: persistence: cannot synch sequencer <" .. theName .. ">, skipping"
+			dcsCommon.logINFO(msg)
+			trigger.action.outText(msg, 40)
 		end
 	end
 end
@@ -363,6 +404,7 @@ end
 -- start module and read config 
 --
 function sequencer.readConfigZone()
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.readConfigZone()")
 	-- note: must match exactly!!!!
 	local theZone = cfxZones.getZoneByName("sequencerConfig") 
 	if not theZone then 
@@ -370,15 +412,17 @@ function sequencer.readConfigZone()
 	end 
 	
 	sequencer.verbose = theZone.verbose
-	
+
+	msg = "***RND: read config"
+	dcsCommon.logINFO(msg)
 	if sequencer.verbose then 
-		trigger.action.outText("***RND: read config", 30)
+		trigger.action.outText(msg, 30)
 	end 
 end
 
 function sequencer.start()
 	-- lib check
-	if not dcsCommon then 
+	if not dcsCommon then
 		trigger.action.outText("sequencer requires dcsCommon", 30)
 		return false 
 	end 
@@ -387,6 +431,8 @@ function sequencer.start()
 		return false 
 	end
 	
+	dcsCommon.logTRACE("+++seq: **TRACE** started sequencer.start()")
+
 	-- read config 
 	sequencer.readConfigZone()
 	
@@ -395,7 +441,9 @@ function sequencer.start()
 	
 	if sequencer.verbose then 
 		local a = dcsCommon.getSizeOfTable(attrZones)
-		trigger.action.outText("sequencers: " .. a, 30)
+		msg = "+++seq: sequencers: " .. a
+		dcsCommon.logINFO(msg)
+		trigger.action.outText(msg, 30)
 	end 
 	
 	-- now create an rnd gen for each one and add them
@@ -421,8 +469,10 @@ function sequencer.start()
 
 	-- start update 
 	timer.scheduleFunction(sequencer.update, {}, timer.getTime() + 1)
-	
-	trigger.action.outText("cfx Sequencer v" .. sequencer.version .. " started.", 30)
+
+	msg = "cfx Sequencer v" .. sequencer.version .. " started."
+	dcsCommon.logINFO(msg)
+	trigger.action.outText(msg, 30)
 	return true 
 end
 

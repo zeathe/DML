@@ -1,7 +1,7 @@
 --ownedZones.lua
 
 cfxOwnedZones = {}
-cfxOwnedZones.version = "2.5.1"
+cfxOwnedZones.version = "2.6.1"
 cfxOwnedZones.verbose = false 
 cfxOwnedZones.announcer = false
 cfxOwnedZones.name = "cfxOwnedZones" 
@@ -53,6 +53,9 @@ cfxOwnedZones.name = "cfxOwnedZones"
 2.5.0 - Added staticsKeep logic to include Static Objects in numKeep
       - Added enableVis and disableVis for explicit visibility control
 2.5.1 - Adjusted outText with Verbose and Announce gating
+2.6.0 - Implement dcsCommon.logXXXXX common logging
+2.6.1 - Fixed neutral posession logic error blocking redLost/blueLost trigger
+        if Announcer not enabled
 --]]--
 cfxOwnedZones.requiredLibs = {
 	"dcsCommon", 
@@ -73,6 +76,7 @@ cfxOwnedZones.conqueredCallbacks = {}
 --
 
 function cfxOwnedZones.addCallBack(conqCallback)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.addCallBack()")
 	local cb = {}
 	cb.callback = conqCallback -- we use this so we can add more data later
 	cfxOwnedZones.conqueredCallbacks[conqCallback] = cb
@@ -80,6 +84,7 @@ function cfxOwnedZones.addCallBack(conqCallback)
 end
 
 function cfxOwnedZones.invokeConqueredCallbacks(aZone, newOwner, lastOwner)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.invokeConqueredCallbacks()")
 	for key, cb in pairs (cfxOwnedZones.conqueredCallbacks) do 
 		cb.aZone = aZone -- set these up for if we need them later
 		cb.newOwner = newOwner
@@ -90,6 +95,7 @@ function cfxOwnedZones.invokeConqueredCallbacks(aZone, newOwner, lastOwner)
 end
 
 function cfxOwnedZones.side2name(theSide)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.side2name()")
 	if theSide == 1 then return "REDFORCE" end
 	if theSide == 2 then return "BLUEFORCE" end
 	if theSide == 3 then return "Neutral (C)" end 
@@ -97,14 +103,18 @@ function cfxOwnedZones.side2name(theSide)
 end
 
 function cfxOwnedZones.conqTemplate(aZone, newOwner, lastOwner) 
+	dcsCommon.logTRACE("Starting cfxOwnedZones.conqTemplate()")
 	if true then return end -- do not output
 
-	if lastOwner == 0 then 
-		trigger.action.outText(cfxOwnedZones.side2name(newOwner) .. " have taken possession of zone " .. aZone.name, 30)
+	if lastOwner == 0 then
+		msg = cfxOwnedZones.side2name(newOwner) .. " have taken possession of zone " .. aZone.name
+		dcsCommon.logINFO(msg)
+		trigger.action.outText(msg, 30)
 		return 
 	end
-	
-	trigger.action.outText("Zone " .. aZone.name .. " was taken by ".. cfxOwnedZones.side2name(newOwner) .. " from " .. cfxOwnedZones.side2name(lastOwner), 30)
+	msg = "Zone " .. aZone.name .. " was taken by ".. cfxOwnedZones.side2name(newOwner) .. " from " .. cfxOwnedZones.side2name(lastOwner)
+	dcsCommon.logINFO(msg)
+	trigger.action.outText(msg, 30)
 end
 
 --
@@ -112,6 +122,7 @@ end
 --
 
 function cfxOwnedZones.drawZoneInMap(aZone)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.drawZoneInMap()")
 	-- will save markID in zone's markID
 	if aZone.markID then 
 		trigger.action.removeMark(aZone.markID)
@@ -142,6 +153,7 @@ function cfxOwnedZones.drawZoneInMap(aZone)
 end
 
 function cfxOwnedZones.getOwnedZoneByName(zName)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.getOwnedZoneByName()")
 	for zKey, theZone in pairs (cfxOwnedZones.zones) do 
 		if theZone.name == zName then return theZone end 
 	end
@@ -149,6 +161,7 @@ function cfxOwnedZones.getOwnedZoneByName(zName)
 end
 
 function cfxOwnedZones.addOwnedZone(aZone)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.addOwnedZone()")
 	local owner = aZone.owner 
 
 	if aZone:hasProperty("toggleVis?") then
@@ -211,12 +224,16 @@ function cfxOwnedZones.addOwnedZone(aZone)
 		local masterZone = aZone:getStringFromZoneProperty("masterOwner", "cfxNoneErr")
 		local theMaster = cfxZones.getZoneByName(masterZone)
 		if not theMaster then 
-			trigger.action.outText("+++owdZ: WARNING: owned zone <" .. aZone.name .. ">'s masterOwner <" .. masterZone .. "> does not exist, not connecting!", 30)
+			msg = "+++owdZ: WARNING: owned zone <" .. aZone.name .. ">'s masterOwner <" .. masterZone .. "> does not exist, not connecting!"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 		else 
 			aZone.masterOwner = theMaster 
 			aZone.owner = theMaster.owner 
+			msg = "+++OwdZ: owned zone <" .. aZone.name .. "> inherits ownership from master zone <" .. masterZone .. ">"
+			dcsCommon.logInfo(msg)
 			if aZone.verbose or cfxOwnedZones.verbose then 
-				trigger.action.outText("+++OwdZ: owned zone <" .. aZone.name .. "> inherits ownership from master zone <" .. masterZone .. ">", 30)
+				trigger.action.outText(msg, 30)
 			end
 		end
 	end
@@ -235,8 +252,11 @@ function cfxOwnedZones.addOwnedZone(aZone)
 	
 	cfxOwnedZones.zones[aZone] = aZone 
 	cfxOwnedZones.drawZoneInMap(aZone)
+
+	msg = "+++owdZ: detected zone <" .. aZone.name .. ">"
+	dcsCommon.logINFO(msg)
 	if aZone.verbose or cfxOwnedZones.verbose then  
-		trigger.action.outText("+++owdZ: detected zone <" .. aZone.name .. ">", 30)
+		trigger.action.outText(msg, 30)
 	end
 end
 
@@ -245,22 +265,26 @@ end
 --
 
 function cfxOwnedZones.bangNeutral(value)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.bangNeutral()")
 	if not cfxOwnedZones.neutralTriggerFlag then return end 
 	cfxZones.pollFlag(cfxOwnedZones.neutralTriggerFlag, cfxOwnedZones.method, cfxOwnedZones)
 end
 
 function cfxOwnedZones.bangRed(value, theZone)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.bangRed()")
 	if not cfxOwnedZones.redTriggerFlag then return end 
 	cfxZones.pollFlag(cfxOwnedZones.redTriggerFlag, cfxOwnedZones.method, cfxOwnedZones)
 end
 
 function cfxOwnedZones.bangBlue(value, theZone)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.bangBlue()")
 	if not cfxOwnedZones.blueTriggerFlag then return end 
 	local newVal = trigger.misc.getUserFlag(cfxOwnedZones.blueTriggerFlag) + value 
 	cfxZones.pollFlag(cfxOwnedZones.blueTriggerFlag, cfxOwnedZones.method, cfxOwnedZones)
 end
 
 function cfxOwnedZones.bangSide(theSide, value, theZone)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.bangSide()")
 	if theSide == 2 then 
 		cfxOwnedZones.bangBlue(value, theZone)
 		return 
@@ -273,52 +297,82 @@ function cfxOwnedZones.bangSide(theSide, value, theZone)
 end
 
 function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral 1 = RED 2 = BLUE 
-	local who = "REDFORCE"
-	if theSide == 2 then who = "BLUEFORCE" 
-	elseif theSide == 0 then who = "NEUTRAL" end
-	aZone.owner = theSide -- just to be sure 
-	
-	if cfxOwnedZones.announcer or aZone.announcer then 
-		if theSide == 0 then 
-			trigger.action.outText(aZone.name .. " has become NEUTRAL", 30)
-		else 
-			trigger.action.outText(who .. " have secured zone " .. aZone.name, 30)
-		end
-		
-		-- play different sounds depending on who's won
-		if theSide == 1 then 
-			trigger.action.outSoundForCoalition(1, cfxOwnedZones.winSound)
-			trigger.action.outSoundForCoalition(2, cfxOwnedZones.loseSound)
-		elseif theSide == 2 then  
-			trigger.action.outSoundForCoalition(2, cfxOwnedZones.winSound)
-			trigger.action.outSoundForCoalition(1, cfxOwnedZones.loseSound)
-		else 
-			-- no sound played, new owner is neutral 
-		end
-	end 
+	dcsCommon.logTRACE("Starting cfxOwnedZones.zoneConquered()")
+	-- This shouldn't be done here, this should be done elsewhere
+	--aZone.owner = theSide -- just to be sure 
 
+	-- Side-Agnostic Flags and Processes
 	if aZone.conqueredFlag then 
 		aZone:pollFlag(aZone.conqueredFlag, aZone.method)
 	end 
-	
-	if theSide == 1 and aZone.redCap then 
-		aZone:pollFlag(aZone.redCap, aZone.method)
-	end
-	
-	if formerOwner == 1 and aZone.redLost then 
-		aZone:pollFlag(aZone.redLost, aZone.method)
-	end
-	
-	if theSide == 2 and aZone.blueCap then 
-		aZone:pollFlag(aZone.blueCap, aZone.method)
-	end
-	
-	if formerOwner == 2 and aZone.blueLost then 
-		aZone:pollFlag(aZone.blueLost, aZone.method)
-	end
-	
-	if theSide == 0 and aZone.neutralCap then 
-		aZone:pollFlag(aZone.neutralCap, aZone.method)
+
+	if theSide == dcsCommon.sides.REDFOR then
+		msg = "RED FORCES have secured zone " .. aZone.name
+		dcsCommon.logINFO(msg)
+
+		-- Side-specific Announcer
+		if cfxOwnedZones.announcer or aZone.announcer then 
+			trigger.action.outText(msg, 30)
+			trigger.action.outSoundForCoalition(dcsCommon.sides.REDFOR, cfxOwnedZones.winSound)
+			if formerOwner == dcsCommon.sides.BLUFOR then
+				trigger.action.outSoundForCoalition(dcsCommon.sides.BLUFOR, cfxOwnedZones.loseSound)
+			end
+		end
+
+		-- Side-specific Flags and Processes
+		if aZone.redCap then aZone:pollFlag(aZone.redCap, aZone.method) end
+
+		if formerOwner == dcsCommon.sides.BLUFOR then
+			if aZone.blueLost then aZone:pollFlag(aZone.blueLost, aZone.method) end
+		end
+
+	elseif theSide == dcsCommon.sides.BLUFOR then
+		msg = "BLUE FORCES have secured zone " .. aZone.name
+		dcsCommon.logINFO(msg)
+
+		-- Side-specific Announcer
+		if cfxOwnedZones.announcer or aZone.announcer then 
+			trigger.action.outText(msg, 30)
+			trigger.action.outSoundForCoalition(dcsCommon.sides.BLUFOR, cfxOwnedZones.winSound)
+			if formerOwner == dcsCommon.sides.REDFOR then
+				trigger.action.outSoundForCoalition(dcsCommon.sides.REDFOR, cfxOwnedZones.loseSound)
+			end
+		end
+
+		-- Side-specific Flags and Processes
+		if aZone.blueCap then aZone:pollFlag(aZone.blueCap, aZone.method) end
+
+		if formerOwner == dcsCommon.sides.REDFOR then
+			if aZone.redLost then aZone:pollFlag(aZone.redLost, aZone.method) end
+		end
+
+	elseif theSide == dcsCommon.sides.NEUTRAL then
+		msg = aZone.name .. " has become NEUTRAL"
+		dcsCommon.logINFO(msg)
+
+		if cfxOwnedZones.announcer or aZone.announcer then 
+			trigger.action.outText(msg, 30)
+		end
+		-- Side-specific Announcer
+		if formerOwner == dcsCommon.sides.REDFOR then
+			if cfxOwnedZones.announcer or aZone.announcer then 
+				trigger.action.outSoundForCoalition(dcsCommon.sides.REDFOR, cfxOwnedZones.loseSound)
+			end
+			if aZone.redLost then aZone:pollFlag(aZone.redLost, aZone.method) end
+		end
+		if formerOwner == dcsCommon.sides.BLUFOR then
+			if cfxOwnedZones.announcer or aZone.announcer then 
+				trigger.action.outSoundForCoalition(dcsCommon.sides.BLUFOR, cfxOwnedZones.loseSound)
+			end
+			if aZone.blueLost then aZone:pollFlag(aZone.blueLost, aZone.method) end
+		end
+
+		if aZone.neutralCap then aZone:pollFlag(aZone.neutralCap, aZone.method) end
+	else
+		-- error state, theSide is not valid of RED, BLUE, or NEUTRAL
+		msg = "cfxOwnedZones.zoneConquered() in Unhandled State - aZone: " .. aZone.name .. ", theSide: " .. theSide .. ", formerOwner: " .. formerOwner
+		dcsCommon.logERROR(msg)
+		trigger.action.outText("ERROR: " .. msg, 30)
 	end
 	
 	-- invoke callbacks now
@@ -330,12 +384,12 @@ function cfxOwnedZones.zoneConquered(aZone, theSide, formerOwner) -- 0 = neutral
 	
 	-- update map
 	cfxOwnedZones.drawZoneInMap(aZone) -- update status in map. will erase previous version 
-
 end
 
 
 
 function cfxOwnedZones.update()
+	dcsCommon.logTRACE("Starting cfxOwnedZones.update()")
 	-- to speed this up we might only want to check the first unit 
 	-- in group, and if inside, count the entire group as inside 
 	-- new. unit counting update 
@@ -376,6 +430,8 @@ function cfxOwnedZones.update()
 	
 	-- WARNING: we only proc ownedZones, NOT airfield nor FARP or other
 	for idz, theZone in pairs(cfxOwnedZones.zones) do 
+		dcsCommon.logDEBUG("+++owdZ: DEBUG - Interrogating zone <" .. theZone.name .. ">")
+		dcsCommon.logDEBUG("+++owdZ: DEBUG - numCap <" .. theZone.numCap ..">, numKeep <".. theZone.numKeep ..">, in zone <" .. theZone.name .. ">")
 		-- See if the zone F10 Map visibility needs to change
 		if theZone.toggleVisFlag then
 			local currToggleVisTriggerVal = trigger.misc.getUserFlag(theZone.toggleVisFlag)
@@ -391,6 +447,7 @@ function cfxOwnedZones.update()
 		end
 
 		if theZone.enableVisFlag then
+			dcsCommon.logDEBUG("+++owdZ: DEBUG - checking toggle Vis flags on zone <" .. theZone.name .. ">")
 			local currEnableVisTriggerVal = trigger.misc.getUserFlag(theZone.enableVisFlag)
 			if currEnableVisTriggerVal ~= theZone.lastEnableVisValue then
 				theZone.lastEnableVisValue = currEnableVisTriggerVal
@@ -414,31 +471,39 @@ function cfxOwnedZones.update()
 
 		if not lastOwner then
 			-- No 'owner' attribute set, this is not an ownedZones Managed zone
-			trigger.action.outText("+++owdZ: WARNING - zone <" .. theZone.name .. "> has NIL owner", 30)
+			msg = "+++owdZ: WARNING - zone <" .. theZone.name .. "> has NIL owner"
+			dcsCommon.logWARNING(msg)
+			trigger.action.outText(msg, 30)
 			return 
 		end 
 
 		-- Definitive Responses
 		-- This zone inherits control
 		if theZone.masterOwner then
+			dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> has MasterOwner <" .. theZone.masterOwner.name .. ">")
 			newOwner = theZone.masterOwner.owner
 
 		-- This Zone is unbeatable, therefor static ownership
 		elseif theZone.unbeatable then
+			dcsCommon.logDEBUG("+++owdZ: DEBUG - set unbeatable on zone <" .. theZone.name .. ">")
 			newOwner = lastOwner
 
 		-- Gotta Calculate Units in Zone
 		else
+			dcsCommon.logDEBUG("+++owdZ: DEBUG - counting units in zone <" .. theZone.name .. ">")
 			theZone.numRed = 0
 			theZone.numBlue = 0 
+			msg = "+++owdZ: DEBUG - Zone <" .. theZone.name .. "> lastOwner is <" .. lastOwner .. ">"
+			dcsCommon.logDEBUG(msg)
 			if theZone.verbose or cfxOwnedZones.verbose then  
-				trigger.action.outText("Zone <" .. theZone.name .. "> lastOwner is <" .. lastOwner .. ">", 30)
+				trigger.action.outText(msg, 30)
 			end 
 
 			-- count red units in zone 
 			for idx, aGroup in pairs(allRed) do 
 				if Group.isExist(aGroup) then 
 					if cfxOwnedZones.fastEval then 
+						dcsCommon.logDEBUG("+++owdZ: DEBUG - Red group Fast Eval in zone <" .. theZone.name .. ">")
 						-- we only check first unit that is alive
 						local theUnit = dcsCommon.getGroupUnit(aGroup)
 						if theUnit and (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
@@ -461,6 +526,7 @@ function cfxOwnedZones.update()
 							end
 						end
 					else -- full eval
+						dcsCommon.logDEBUG("+++owdZ: DEBUG - Red group FULL Eval in zone <" .. theZone.name .. ">")
 						local allUnits = aGroup:getUnits() 
 						for idy, theUnit in pairs(allUnits) do 
 							if (not theUnit:inAir()) and theZone:unitInZone(theUnit) then 
@@ -488,6 +554,7 @@ function cfxOwnedZones.update()
 			for idx, aGroup in pairs(allBlue) do 
 				if Group.isExist(aGroup) then 
 					if cfxOwnedZones.fastEval then 
+						dcsCommon.logDEBUG("+++owdZ: DEBUG - Blue group Fast Eval in zone <" .. theZone.name .. ">")
 						-- we only check first unit that is alive
 						local theUnit = dcsCommon.getGroupUnit(aGroup)
 						if theUnit and (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
@@ -510,6 +577,7 @@ function cfxOwnedZones.update()
 							end
 						end
 					else 
+						dcsCommon.logDEBUG("+++owdZ: DEBUG - Blue group FULL Eval in zone <" .. theZone.name .. ">")
 						local allUnits = aGroup:getUnits() 
 						for idy, theUnit in pairs(allUnits) do 
 							if (not theUnit:inAir()) and theZone:unitInZone(theUnit) then
@@ -532,63 +600,77 @@ function cfxOwnedZones.update()
 					end
 				end
 			end
-			
+		
+			msg = "+++owdZ: DEBUG - zone <" .. theZone.name .. ">: red inside: <" .. theZone.numRed .. ">, blue inside: <" .. theZone.numBlue ..">"
+			dcsCommon.logDEBUG(msg)
 			if theZone.verbose or cfxOwnedZones.verbose then  
-				trigger.action.outText("+++owdZ: zone <" .. theZone.name .. ">: red inside: <" .. theZone.numRed .. ">, blue inside: <>" .. theZone.numBlue, 30)
+				trigger.action.outText(msg, 30)
 			end
 		
 
 			-- Zone is empty
 			if theZone.numRed < 1 and theZone.numBlue < 1 then 
+				dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> identified as EMPTY")
 				-- no troops hereBecome neutral?
 				if theZone.numKeep < 1 then 
 					newOwner = lastOwner -- keep it, else turns neutral
 				else 
 					-- noone here, zone becomes neutral
-					newOwner = 0 -- not strictly required. to be explicit 
+					newOwner = dcsCommon.sides.NEUTRAL -- not strictly required. to be explicit 
 				end
 
 			-- No Red in Zone or No Blue in Zone
 			elseif theZone.numRed < 1 or theZone.numBlue < 1 then 
+				dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> identified as uncontested one side population")
 				-- Leave the zone unchanged if we don't have enough to cap
 				newOwner = lastOwner
 
 				-- only red here. enough to cap?
 				if theZone.numRed >= theZone.numCap then 
-					newOwner = 1 -- red owns it
+					dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> identified as RED CAP")
+					newOwner = dcsCommon.sides.REDFOR -- red owns it
 				end
 
 				-- only blue here. enough to cap? 
 				if theZone.numBlue >= theZone.numCap then 
-					newOwner = 2 -- blue owns it
+					dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> identified as BLUE CAP")
+					newOwner = dcsCommon.sides.BLUFOR -- blue owns it
 				end
 
 			-- Contested Population of Red and Blue
 			else 
+				dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> identified as contested population")
 				-- owner keeps hanging on only they have enough 
 				-- units left
 				if cfxOwnedZones.easyContest then 
+					dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> is easy contest -- setting neutral")
 					-- this zone is immediately contested
-					newOwner = 0 -- just to be explicit 
+					newOwner = dcsCommon.sides.NEUTRAL -- just to be explicit 
 				elseif theZone.numKeep < 1 then 
+					dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> requires all old owner to be purged (numKeep < 1)")
 					-- old owner keeps it until none left 
 					newOwner = lastOwner
 				else
+					dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> checking contested populations...")
 					-- Order is important here
 					-- Red Takes from Blue
 					if theZone.numRed > theZone.numCap and theZone.numBlue < theZone.numKeep then
-						newOwner = 1
+						dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> multi-pop RED CAP")
+						newOwner = dcsCommon.sides.REDFOR
 
 					-- Blue takes from Red
 					elseif theZone.numBlue > theZone.numCap and theZone.numRed < theZone.numKeep then
-						newOwner = 2
+						dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> multi-pop BLUE CAP")
+						newOwner = dcsCommon.sides.BLUFOR
 
 					-- Neither force large enough to hold, Contested Zone
 					elseif theZone.numRed < theZone.numKeep and theZone.numBlue < theZone.numKeep then
-						newOwner = 0
+						dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> neither side can hold minKeep")
+						newOwner = dcsCommon.sides.NEUTRAL
 					
 					-- Neither force is large enough to Cap, and not small enough to not keep
 					else
+						dcsCommon.logDEBUG("+++owdZ: DEBUG - zone <" .. theZone.name .. "> not below minKeep threshold keeping owner: <" .. lastOwner .. ">")
 						newOwner = lastOwner
 					end
 				end
@@ -600,8 +682,10 @@ function cfxOwnedZones.update()
 		if newOwner == lastOwner then 
 			-- nothing happened, do nothing 
 		else 
+			msg = theZone.name .. " change hands from  " .. lastOwner .. " to " .. newOwner
+			dcsCommon.logINFO(msg)
 			if theZone.verbose or cfxOwnedZones.verbose then  
-				trigger.action.outText(theZone.name .. " change hands from  " .. lastOwner .. " to " .. newOwner, 30)
+				trigger.action.outText(msg, 30)
 			end
 			--if newOwner == 0 then -- zone turned neutral 
 			--	cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
@@ -609,8 +693,8 @@ function cfxOwnedZones.update()
 			--	cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
 			--end
 			
-			cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
 			theZone.owner = newOwner
+			cfxOwnedZones.zoneConquered(theZone, newOwner, lastOwner)
 
 			-- update ownership flag if exists
 			if theZone.ownedBy then 
@@ -664,6 +748,7 @@ function cfxOwnedZones.update()
 end
 
 function cfxOwnedZones.sideOwnsAll(theSide, useAllManaged)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.sideOwnsAll()")
 	local themAll = cfxOwnedZones.zones 
 	if useAllManaged then themAll = cfxZones.allManagedOwnedZones end 
 	for key, aZone in pairs(themAll) do 
@@ -682,6 +767,7 @@ end
 --
 
 function cfxOwnedZones.gatherAllManagedOwnedZones()
+	dcsCommon.logTRACE("Starting cfxOwnedZones.gatherAllManagedOwnedZones()")
 	-- we collect all zones with 'owner'
 	local all = {}
 	local pZones = cfxZones.zonesWithProperty("owner")
@@ -710,6 +796,7 @@ end
 -- includes all managed-owner zones 
 -- called from external sources
 function cfxOwnedZones.collectZones(mode)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.collectZones()")
 	if not mode then mode = "land" end 
 	if mode == "land" then 
 		local landZones = {}
@@ -730,12 +817,14 @@ end
 
 -- getNearestOwnedZoneToPoint invoked by heloTroops
 function cfxOwnedZones.getNearestOwnedZoneToPoint(p)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.getNearestOwnedZoneToPoint()")
 	local allZones = cfxOwnedZones.collectZones()
 	return cfxZones.getClosestZone(p, allZones)
 end
 
 -- getNearestEnemyOwnedZone invoked by cfxGroundTroops
 function cfxOwnedZones.getNearestEnemyOwnedZone(theZone, targetNeutral)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.getNearestEnemyOwnedZone()")
 	if not targetNeutral then targetNeutral = false else targetNeutral = true end
 	local shortestDist = math.huge
 	local closestZone = nil
@@ -773,6 +862,7 @@ end
 
 -- invoked by factory 
 function cfxOwnedZones.enemiesRemaining(aZone)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.enemiesRemaining()")
 	if cfxOwnedZones.getNearestEnemyOwnedZone(aZone) then return true end
 	return false
 end
@@ -783,6 +873,7 @@ end
 --
 
 function cfxOwnedZones.saveData()
+	dcsCommon.logTRACE("Starting cfxOwnedZones.saveData()")
 	-- this is called from persistence when it's time to 
 	-- save data. returns a table with all my data 
 	local theData = {}
@@ -813,6 +904,7 @@ function cfxOwnedZones.saveData()
 end
 
 function cfxOwnedZones.loadData()
+	dcsCommon.logTRACE("Starting cfxOwnedZones.loadData()")
 	-- remember to draw in map with new owner 
 	if not persistence then return end 
 	local theData = persistence.getSavedDataForModule("cfxOwnedZones")
@@ -854,6 +946,7 @@ end
  
 --
 function cfxOwnedZones.readConfigZone(theZone)
+	dcsCommon.logTRACE("Starting cfxOwnedZones.readConfigZone()")
 	if not theZone then theZone = cfxZones.createSimpleZone("ownedZonesConfig") end 
 	
 	cfxOwnedZones.name = "cfxOwnedZones" -- just in case, so we can access with cfxZones 
@@ -938,6 +1031,7 @@ function cfxOwnedZones.readConfigZone(theZone)
 end
 
 function cfxOwnedZones.init()
+	dcsCommon.logTRACE("Starting cfxOwnedZones.init()")
 	-- check libs
 	if not dcsCommon.libCheck("cfx Owned Zones", 
 		cfxOwnedZones.requiredLibs) then
