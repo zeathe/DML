@@ -1,3 +1,5 @@
+-- stopGaps.lua
+
 stopGap = {}
 stopGap.version = "1.3.0"
 stopGap.verbose = false 

@@ -1,3 +1,5 @@
+-- FARPZones.lua
+
 FARPZones = {}
 FARPZones.version = "2.2.0"
 FARPZones.verbose = false 

@@ -1,3 +1,5 @@
+-- cfxMX.lua
+
 cfxMX = {}
 cfxMX.version = "2.2.0"
 cfxMX.verbose = false 

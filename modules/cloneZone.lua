@@ -1,3 +1,5 @@
+-- cloneZone.lua
+
 cloneZones = {}
 cloneZones.version = "2.4.0"
 cloneZones.verbose = false  

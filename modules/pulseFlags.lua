@@ -1,3 +1,5 @@
+-- pulseFlags.lua
+
 pulseFlags = {}
 pulseFlags.version = "2.0.1"
 pulseFlags.verbose = false 

@@ -1,3 +1,5 @@
+-- radioTrigger.lua
+
 radioTrigger = {}
 radioTrigger.version = "1.0.1"
 radioTrigger.verbose = false 

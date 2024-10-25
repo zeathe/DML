@@ -1,3 +1,5 @@
+-- delayFlags.lua
+
 delayFlag = {}
 delayFlag.version = "2.0.0"
 delayFlag.verbose = false  

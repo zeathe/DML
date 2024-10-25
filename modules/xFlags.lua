@@ -1,3 +1,5 @@
+-- xFlags.lua
+
 xFlags = {}
 xFlags.version = "2.0.0"
 xFlags.verbose = false 

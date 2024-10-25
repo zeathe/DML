@@ -1,3 +1,5 @@
+-- cargoManager.lua
+
 cfxCargoManager = {}
 cfxCargoManager.version = "1.0.2"
 cfxCargoManager.ups = 1 -- updates per second

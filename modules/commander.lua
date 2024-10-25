@@ -1,3 +1,5 @@
+-- commander.lua
+
 -- cfxCommander - issue dcs commands to groups etc
 --
 -- supports scheduling

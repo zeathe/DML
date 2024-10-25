@@ -1,3 +1,5 @@
+-- cfxGroups.lua
+
 cfxGroups = {}
 cfxGroups.version = "1.1.0"
 --[[--
