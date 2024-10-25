@@ -1,3 +1,5 @@
+-- baseCaptured.lua
+
 baseCaptured={}
 baseCaptured.version = "1.0.2"
 baseCaptured.verbose = false

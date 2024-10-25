@@ -1,3 +1,5 @@
+-- groundTroops.lua
+
 cfxGroundTroops = {}
 cfxGroundTroops.version = "2.2.1"
 cfxGroundTroops.ups = 0.25 -- every 4 seconds 

@@ -1,3 +1,5 @@
+-- cfxPlayer.lua
+
 -- cfx player handler for DCS Missions by cf/x AG
 -- 
 -- a module that provides easy access to a mission's player data

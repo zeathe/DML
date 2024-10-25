@@ -1,3 +1,5 @@
+--SSBClient.lua
+
 cfxSSBClient = {}
 cfxSSBClient.version = "5.0.0"
 cfxSSBClient.verbose = false 

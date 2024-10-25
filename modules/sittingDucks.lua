@@ -1,3 +1,5 @@
+-- sittingDucks.lua
+
 sittingDucks = {}
 sittingDucks.verbose = false 
 sittingDucks.version = "1.0.1"

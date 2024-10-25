@@ -1,3 +1,5 @@
+--cfsZones.lua
+
 cfxZones = {}
 cfxZones.version = "4.5.0" 
 

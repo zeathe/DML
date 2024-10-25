@@ -1,3 +1,5 @@
+-- groupTrackers.lua
+
 groupTracker = {}
 groupTracker.version = "2.0.1"
 groupTracker.verbose = false 

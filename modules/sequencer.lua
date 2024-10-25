@@ -1,3 +1,5 @@
+-- sequencer.lua
+
 sequencer = {}
 sequencer.version = "2.1.0"
 sequencer.verbose = false 
